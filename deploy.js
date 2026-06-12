@@ -260,23 +260,33 @@ async function setupVercel(supabase) {
     JSON.stringify({ projectId, orgId })
   );
 
-  // Deploy via npx (no global install needed)
+  // Deploy via npx (no global install needed) — capture output to extract URL
   console.log("    deploying to Vercel (takes ~1 min, progress shown below)...");
-  execSync(`npx --yes vercel@latest deploy --prod --token "${VERCEL_TOKEN}" --yes`, {
-    cwd: DIR,
-    stdio: "inherit",
-    env: { ...process.env, VERCEL_TOKEN },
-  });
+  let deployOutput = "";
+  try {
+    const { spawnSync: sp } = await import("child_process");
+    const r = sp(
+      "npx",
+      ["--yes", "vercel@latest", "deploy", "--prod", `--token`, VERCEL_TOKEN, "--yes"],
+      { cwd: DIR, encoding: "utf8", timeout: 300000, env: { ...process.env, VERCEL_TOKEN } }
+    );
+    deployOutput = (r.stdout || "") + (r.stderr || "");
+    process.stdout.write(deployOutput);
+    if (r.status !== 0) throw new Error(deployOutput.slice(-500));
+  } catch (e) {
+    throw new Error("Vercel deploy failed: " + e.message.slice(0, 400));
+  }
 
-  // Fetch the production URL from the API
-  await sleep(3000);
-  const deployments = await verc(
-    `/v9/projects/${projectId}/deployments?limit=1&state=READY&target=production`
-  );
-  const latest = deployments.deployments?.[0];
-  if (!latest) throw new Error("Could not find a completed Vercel deployment.");
+  // Parse the aliased production URL from CLI output
+  // e.g. "▲ Aliased     https://yellow-owl.vercel.app"
+  const aliasMatch = deployOutput.match(/Aliased\s+(https:\/\/[^\s]+\.vercel\.app)/);
+  const prodMatch = deployOutput.match(/Production\s+(https:\/\/[^\s]+\.vercel\.app)/);
+  const anyMatch = deployOutput.match(/https:\/\/[^\s]+\.vercel\.app/g);
 
-  const siteUrl = `https://${latest.url}`;
+  const siteUrl =
+    aliasMatch?.[1] || prodMatch?.[1] || (anyMatch ? anyMatch[anyMatch.length - 1] : null);
+  if (!siteUrl) throw new Error("Could not find deployment URL in output:\n" + deployOutput.slice(-500));
+
   console.log(`\n    live at: ${siteUrl} ✓`);
   return { siteUrl, projectId };
 }
