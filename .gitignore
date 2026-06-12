@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.deploy
+
+# Deploy script output
+.deploy-output.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel project link (created by deploy.js)
+.vercel/
+
+# Claude Code local settings (may contain tokens)
+.claude/
