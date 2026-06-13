@@ -54,6 +54,14 @@ const EMERGENCY_BASE = {
 async function token() { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || ""; }
 async function authedPost(path, body) { const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${await token()}` }, body: JSON.stringify(body) }); return res.json(); }
 function shuffle(a) { return [...a].sort(() => Math.random() - 0.5); }
+// Parse how many list items a prompt is asking for, e.g. "think of 5 ways" → 5
+function listCount(prompt = "") {
+  const byUnit = (prompt || "").match(/\b([2-8])\s+(?:ideas?|ways?|reasons?|things?|examples?|causes?|points?|arguments?|solutions?)\b/i);
+  if (byUnit) return Math.min(parseInt(byUnit[1]), 8);
+  const byVerb = (prompt || "").match(/\b(?:list|think of|come up with)\s+(?:at\s+least\s+)?([2-8])\b/i);
+  if (byVerb) return Math.min(parseInt(byVerb[1]), 8);
+  return 0;
+}
 
 async function assembleSession(track, interest) {
   let rows = [];
@@ -321,7 +329,12 @@ export default function App() {
   if (screen === "session" && ch) {
     const r = resp[ch.id] || {}, it = INTERACTION[ch.type], meta = TYPE_META[ch.type] || { eb: ch.type, accent: C.teal }, remaining = session.length - idx - 1;
     const ghost = (dy, sc, op) => ({ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, transform: `translateY(${dy}px) scale(${sc})`, background: C.paper, border: `1px solid ${C.line}`, borderRadius: 24, opacity: op, zIndex: 1 });
-    const ideaCount = ch.type === "generate" ? 5 : 3;
+    // How many list boxes to show: parse from prompt text, fall back to per-type defaults
+    const ideaCount = ch.type === "generate"
+      ? (listCount(ch.prompt) || 5)
+      : ch.type === "cause"
+      ? (listCount(ch.prompt) || 3)
+      : listCount(ch.prompt);
     return (<Shell>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         {session.map((_, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 22, height: 3, background: i <= idx ? C.teal : C.line }} /> : null}<div style={{ width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: i < idx ? C.teal : i === idx ? C.sun : C.paper, border: `2px solid ${i <= idx ? "transparent" : C.line}`, color: i < idx ? C.paper : C.ink, fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{i < idx ? "✓" : i + 1}</div></React.Fragment>))}
@@ -338,13 +351,16 @@ export default function App() {
             <p style={{ fontSize: 18, lineHeight: 1.6, marginTop: 10 }}>{ch.scenario}</p>
             <p style={{ fontSize: 17, lineHeight: 1.6, color: C.navy, fontWeight: 500 }}>{ch.prompt}</p>
 
-            {/* List input for idea-generating and cause-finding challenges */}
-            {it === "text" && (ch.type === "generate" || ch.type === "cause") ? (
-              <IdeaList count={ideaCount} values={r.ideas || []} label={ch.type === "generate" ? "Idea" : "Reason"} onChange={(i2, val) => updateIdea(ch.id, i2, val, ideaCount)} />
+            {/* Numbered list boxes when prompt asks for multiple items, plain text otherwise */}
+            {it === "text" && ideaCount > 0 ? (
+              <IdeaList
+                count={ideaCount}
+                values={r.ideas || []}
+                label={ch.type === "generate" ? "Idea" : ch.type === "cause" ? "Reason" : "Point"}
+                onChange={(i2, val) => updateIdea(ch.id, i2, val, ideaCount)}
+              />
             ) : null}
-
-            {/* Short text for pattern-spotting challenges */}
-            {it === "text" && ch.type !== "generate" && ch.type !== "cause" ? (
+            {it === "text" && ideaCount === 0 ? (
               <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Write your thinking here…" />
             ) : null}
 
