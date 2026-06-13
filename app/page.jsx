@@ -149,7 +149,10 @@ const TrackChip = ({ tk }) => (<span style={{ display: "inline-flex", padding: "
 export default function App() {
   const [screen, setScreen] = useState("boot");
   const [user, setUser] = useState(undefined);
-  const [email, setEmail] = useState(""); const [sent, setSent] = useState(false);
+  const [passcode, setPasscode] = useState("");
+  const [showRegister, setShowRegister] = useState(false);
+  const [regPhone, setRegPhone] = useState(""); const [regName, setRegName] = useState("");
+  const [generatedCode, setGeneratedCode] = useState(""); const [regBusy, setRegBusy] = useState(false); const [regMsg, setRegMsg] = useState("");
   const [children, setChildren] = useState([]);
   const [child, setChild] = useState(null); const [sessions, setSessions] = useState([]);
   const [form, setForm] = useState({ name: "", age: "11", interest: "Space", consent: false });
@@ -162,7 +165,27 @@ export default function App() {
   useEffect(() => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {} }, [idx, screen, baseStage]);
 
   async function loadChildren() { const { data } = await supabase.from("children").select("*").order("created_at"); setChildren(data || []); setScreen(data && data.length ? "picker" : "newchild"); }
-  async function sendLink() { setBusy(true); setMsg(""); const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined } }); setBusy(false); if (error) setMsg(error.message); else setSent(true); }
+  async function loginWithPasscode() {
+    const code = passcode.trim().toUpperCase();
+    if (code.length < 6) { setMsg("Enter your full 6-character passcode."); return; }
+    setBusy(true); setMsg("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: `${code.toLowerCase()}@yellowowl.app`,
+      password: code,
+    });
+    setBusy(false);
+    if (error) setMsg("Wrong passcode — check it and try again.");
+  }
+  async function registerFamily() {
+    setRegBusy(true); setRegMsg("");
+    try {
+      const res = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: regPhone.trim(), parentName: regName.trim() }) });
+      const data = await res.json();
+      if (data.error) { setRegMsg(data.error); setRegBusy(false); return; }
+      setGeneratedCode(data.passcode);
+    } catch { setRegMsg("Something went wrong. Please try again."); }
+    setRegBusy(false);
+  }
   async function resume(c) { setChild(c); setBaseline(c.baseline_scores || null); const { data } = await supabase.from("sessions").select("*").eq("child_id", c.id).order("week"); setSessions(data || []); setScreen("home"); }
   async function createChild(goBaseline) {
     setBusy(true); const track = trackFor(form.age);
@@ -248,11 +271,82 @@ export default function App() {
   if (screen === "boot" || screen === "loading") return (<Shell max={520}><div style={{ textAlign: "center", paddingTop: 70 }}><div style={{ animation: "bob 1.6s ease infinite", display: "inline-block" }}><Owl size={92} mood={screen === "loading" ? "think" : "calm"} /></div><H size={24}>{screen === "boot" ? "Waking the owl…" : report === null && session.length ? "Hmm, let me see how you think…" : "Getting your adventure ready…"}</H></div></Shell>);
 
   // ── LOGIN ──
-  if (screen === "login") return (<Shell max={460}><div style={{ textAlign: "center", marginBottom: 20 }}><Owl size={92} /><H size={34}>Yellow Owl</H><p style={{ color: C.slate, fontSize: 16, marginTop: 6 }}>A weekly thinking adventure for curious kids. Parents sign in here.</p></div>
-    <Card accent={C.sun}>{sent ? <div style={{ textAlign: "center" }}><Eyebrow>Check your email</Eyebrow><p style={{ marginTop: 8 }}>We sent a link to <b>{email}</b>. Tap it to sign in.</p></div> : <><Eyebrow>Parent sign in</Eyebrow><p style={{ color: C.slate, fontSize: 14, margin: "6px 0 10px" }}>No password needed — we email you a one-tap link.</p><Input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} /><div style={{ marginTop: 16 }}><Btn onClick={sendLink} disabled={busy || !email.includes("@")} style={{ width: "100%" }}>{busy ? "Sending…" : "Email me a link →"}</Btn></div>{msg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10 }}>{msg}</p> : null}</>}</Card></Shell>);
+  if (screen === "login") return (
+    <Shell max={460}>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <Owl size={92} />
+        <H size={34}>Yellow Owl</H>
+        <p style={{ color: C.slate, fontSize: 16, marginTop: 6 }}>A weekly thinking adventure for curious kids.</p>
+      </div>
+
+      <Card accent={C.sun}>
+        <Eyebrow>Enter your passcode</Eyebrow>
+        <input
+          type="text"
+          maxLength={6}
+          placeholder="e.g. W3PK7B"
+          value={passcode}
+          onChange={(e) => { setPasscode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "")); setMsg(""); }}
+          onKeyDown={(e) => e.key === "Enter" && !busy && loginWithPasscode()}
+          style={{ width: "100%", marginTop: 14, padding: "16px 18px", borderRadius: 16, border: `2px solid ${C.line}`, borderBottom: `5px solid #E4DCCB`, fontSize: 26, fontFamily: "Fredoka, system-ui", fontWeight: 700, letterSpacing: 6, textAlign: "center", boxSizing: "border-box", outline: "none", color: C.ink, textTransform: "uppercase" }}
+        />
+        <div style={{ marginTop: 16 }}>
+          <Btn onClick={loginWithPasscode} disabled={busy || passcode.trim().length < 6} style={{ width: "100%" }}>
+            {busy ? "Checking…" : "Let me in →"}
+          </Btn>
+        </div>
+        {msg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10, textAlign: "center" }}>{msg}</p> : null}
+        <p style={{ textAlign: "center", marginTop: 18, marginBottom: 0, fontSize: 14, color: C.slate }}>
+          Don't have a passcode?{" "}
+          <button onClick={() => { setShowRegister(true); setGeneratedCode(""); setRegPhone(""); setRegName(""); setRegMsg(""); }} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, padding: 0, textDecoration: "underline" }}>
+            Register now
+          </button>
+        </p>
+      </Card>
+
+      {/* ── Registration modal ── */}
+      {showRegister && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(27,42,69,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={() => !regBusy && setShowRegister(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.paper, borderRadius: 24, padding: "28px 24px", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(27,42,69,.22)" }}>
+            {generatedCode ? (
+              /* ── Success state ── */
+              <div style={{ textAlign: "center" }}>
+                <Owl size={64} mood="cheer" />
+                <H size={24} style={{ marginTop: 10 }}>Your passcode is ready!</H>
+                <div style={{ margin: "18px 0", padding: "18px 24px", background: C.cream, borderRadius: 16, border: `2px solid ${C.sun}` }}>
+                  <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 36, letterSpacing: 8, color: C.ink }}>{generatedCode}</div>
+                  <p style={{ color: C.slate, fontSize: 13, marginTop: 6, marginBottom: 0 }}>Write this down — you'll use it every time you log in.</p>
+                </div>
+                <Btn style={{ width: "100%" }} onClick={() => { setShowRegister(false); setPasscode(generatedCode); }}>
+                  Use it now →
+                </Btn>
+              </div>
+            ) : (
+              /* ── Form state ── */
+              <>
+                <H size={24}>Get your passcode</H>
+                <p style={{ color: C.slate, fontSize: 14, marginTop: 6, marginBottom: 18 }}>Enter your phone number and we'll create a passcode for you.</p>
+                <Eyebrow color={C.slate}>Phone number</Eyebrow>
+                <Input type="tel" placeholder="+44 7700 123456" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} style={{ marginTop: 8 }} />
+                <Eyebrow color={C.slate} style={{ marginTop: 14 }}>Your name (optional)</Eyebrow>
+                <Input placeholder="Parent's name" value={regName} onChange={(e) => setRegName(e.target.value)} style={{ marginTop: 8 }} />
+                {regMsg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10 }}>{regMsg}</p> : null}
+                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                  <Btn kind="ghost" onClick={() => setShowRegister(false)} disabled={regBusy} style={{ flex: 1 }}>Cancel</Btn>
+                  <Btn onClick={registerFamily} disabled={regBusy || regPhone.trim().replace(/\D/g, "").length < 7} style={{ flex: 2 }}>
+                    {regBusy ? "Creating…" : "Get my passcode →"}
+                  </Btn>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </Shell>
+  );
 
   // ── PICKER ──
-  if (screen === "picker") return (<Shell max={520}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}><div><H size={28}>Welcome back!</H><p style={{ color: C.slate }}>Who's playing today?</p></div><button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontFamily: "Fredoka", fontWeight: 600 }}>Sign out</button></div>
+  if (screen === "picker") return (<Shell max={520}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}><div><H size={28}>Welcome back!</H><p style={{ color: C.slate }}>Who's playing today?</p></div><button onClick={() => { setPasscode(""); supabase.auth.signOut(); }} style={{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontFamily: "Fredoka", fontWeight: 600 }}>Sign out</button></div>
     <div style={{ display: "grid", gap: 10 }}>{children.map((c) => (<button key={c.id} onClick={() => resume(c)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderRadius: 18, border: `2px solid ${C.line}`, background: C.paper, cursor: "pointer", fontSize: 18, fontFamily: "Fredoka", fontWeight: 700, color: C.ink }}><span>{c.name}</span><span style={{ color: C.slate, fontWeight: 500, fontSize: 14 }}>{TRACKS[c.track].label}</span></button>))}</div>
     <div style={{ textAlign: "center", marginTop: 18 }}><Btn kind="ghost" onClick={() => { setForm({ name: "", age: "11", interest: "Space", consent: false }); setMsg(""); setScreen("newchild"); }}>+ Add a child</Btn></div></Shell>);
 

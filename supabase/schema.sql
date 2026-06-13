@@ -65,6 +65,17 @@ create table if not exists consent (
   created_at    timestamptz default now()
 );
 
+-- Families: maps phone numbers to reusable passcodes and Supabase auth users.
+-- Written server-side only (service role bypasses RLS).
+create table if not exists families (
+  id           uuid primary key default gen_random_uuid(),
+  phone        text unique not null,
+  passcode     text unique not null,
+  parent_name  text,
+  user_id      uuid references auth.users(id) on delete cascade,
+  created_at   timestamptz default now()
+);
+
 -- ── Row Level Security ───────────────────────────────────────────────────────
 
 alter table children     enable row level security;
@@ -72,6 +83,8 @@ alter table sessions     enable row level security;
 alter table content_bank enable row level security;
 alter table baselines    enable row level security;
 alter table consent      enable row level security;
+alter table families     enable row level security;
+-- No policies on families — service role only writes/reads it directly.
 
 -- Drop first so re-runs don't fail on "already exists"
 drop policy if exists "parent owns children"           on children;
