@@ -203,12 +203,23 @@ export default function App() {
   function transcript() { return session.map((c, i) => { const r = resp[c.id] || {}, it = INTERACTION[c.type]; let s = `Challenge ${i + 1} [${c.type}, step ${c.step}] ${c.scenario} ${c.prompt}`; if (it === "grid") s += ` | Notes: ${(c.options || []).map((o, j) => `${o}: ${(r.notes || {})[j] || "—"}`).join(" / ")}`; else if (it === "choose") s += ` | Chose: ${r.choice || "—"} | Reason: ${r.reason || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else if (it === "verify") s += ` | Plan: ${r.answer || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else s += ` | Answer: ${r.answer || "—"}`; return s; }).join("\n"); }
   async function finish() {
     setBusy(true); setScreen("loading");
-    const keys = T.keys; const d = await authedPost("/api/score", { childId: child.id, age: child.age, track: tk, keys, transcript: transcript() });
-    const scores = {}; keys.forEach((k) => (scores[k] = Number(d[k]) || 0));
+    const keys = T.keys;
+    let d = {};
+    try {
+      d = await authedPost("/api/score", { childId: child.id, age: child.age, track: tk, keys, transcript: transcript() });
+    } catch (e) {
+      console.error("Scoring failed:", e);
+    }
+    const scores = {}; keys.forEach((k) => (scores[k] = Number(d[k]) || 2));
     let highlights = d.highlights; if (!highlights || !highlights.length) highlights = session.map((c) => (resp[c.id] || {}).answer || (resp[c.id] || {}).reason).filter(Boolean).slice(0, 2);
     const entry = { child_id: child.id, week: sessions.length + 1, scores, responsiveness: d.responsiveness ?? 2, child_tip: d.childTip || "Great work — keep explaining your thinking!", weakness: d.weakness || "", narrative: d.narrative || "", highlights, transcript: transcript() };
-    const { data: saved } = await supabase.from("sessions").insert(entry).select().single();
-    setSessions([...sessions, saved || entry]);
+    try {
+      const { data: saved } = await supabase.from("sessions").insert(entry).select().single();
+      setSessions([...sessions, saved || entry]);
+    } catch (e) {
+      console.error("Session save failed:", e);
+      setSessions([...sessions, entry]);
+    }
     setReport({ ...entry, scores }); setBusy(false); setScreen("summary");
   }
   const next = () => { if (idx + 1 < session.length) { setIdx(idx + 1); setPhase("answer"); } else finish(); };
