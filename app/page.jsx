@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseBrowser";
+import { buildSessionFromBank } from "../lib/questionBank";
 
 // ── Brand ─────────────────────────────────────────────────────────────────────
 const C = { ink: "#1B2A45", navy: "#2A4368", teal: "#0FA890", cyan: "#22B8CF", sun: "#FFC23C", coral: "#F4845F", grape: "#7A6BE0", cream: "#FBF7EF", paper: "#FFFFFF", slate: "#67738A", line: "#EBE4D6" };
@@ -64,16 +65,25 @@ function listCount(prompt = "") {
 }
 
 async function assembleSession(track, interest) {
-  let rows = [];
+  // Try the AI-generated database first — only use it if it has enough content
   try {
-    let q = await supabase.from("content_bank").select("*").eq("track", track).eq("interest", interest).eq("active", true);
-    rows = q.data || [];
-    if (rows.length < 4) { const q2 = await supabase.from("content_bank").select("*").eq("track", track).eq("active", true); rows = q2.data || rows; }
-  } catch { rows = []; }
-  if (!rows.length) return EMERGENCY[track];
-  const picked = shuffle(rows).slice(0, 5);
-  if (!picked.some((r) => committing(r.type))) { const c = rows.find((r) => committing(r.type)); if (c) picked[picked.length - 1] = c; }
-  return picked.map((r) => ({ id: r.id, type: r.type, step: r.step, title: r.title, scenario: r.scenario, prompt: r.prompt, options: r.options || undefined, curveball: r.curveball || undefined }));
+    let { data: rows } = await supabase.from("content_bank").select("*").eq("track", track).eq("interest", interest).eq("active", true);
+    if (!rows || rows.length < 4) {
+      const { data: wider } = await supabase.from("content_bank").select("*").eq("track", track).eq("active", true);
+      rows = (wider && wider.length >= 5) ? wider : rows;
+    }
+    if (rows && rows.length >= 5) {
+      const picked = shuffle(rows).slice(0, 5);
+      if (!picked.some((r) => committing(r.type))) {
+        const c = rows.find((r) => committing(r.type));
+        if (c) picked[picked.length - 1] = c;
+      }
+      return picked.map((r) => ({ id: r.id, type: r.type, step: r.step, title: r.title, scenario: r.scenario, prompt: r.prompt, options: r.options || undefined, curveball: r.curveball || undefined }));
+    }
+  } catch { /* fall through */ }
+
+  // Use the built-in question bank — 6 questions per step, randomised each session
+  return buildSessionFromBank(track);
 }
 async function loadBaseline(track) {
   try { const { data } = await supabase.from("baselines").select("*").eq("track", track).eq("form", "baseline").eq("active", true).limit(1); if (data && data[0]) return data[0]; } catch {}
