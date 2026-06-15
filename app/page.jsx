@@ -150,9 +150,10 @@ export default function App() {
   const [screen, setScreen] = useState("boot");
   const [user, setUser] = useState(undefined);
   const [passcode, setPasscode] = useState("");
-  const [showRegister, setShowRegister] = useState(false);
-  const [regPhone, setRegPhone] = useState(""); const [regName, setRegName] = useState("");
+  const [modalMode, setModalMode] = useState(null); // null | "register" | "forgot"
+  const [regPhone, setRegPhone] = useState(""); const [regChildName, setRegChildName] = useState(""); const [regChildAge, setRegChildAge] = useState("11"); const [regChildInterest, setRegChildInterest] = useState("Space"); const [regConsent, setRegConsent] = useState(false);
   const [generatedCode, setGeneratedCode] = useState(""); const [regBusy, setRegBusy] = useState(false); const [regMsg, setRegMsg] = useState("");
+  const [forgotPhone, setForgotPhone] = useState(""); const [forgotCode, setForgotCode] = useState(""); const [forgotBusy, setForgotBusy] = useState(false); const [forgotMsg, setForgotMsg] = useState("");
   const [children, setChildren] = useState([]);
   const [child, setChild] = useState(null); const [sessions, setSessions] = useState([]);
   const [form, setForm] = useState({ name: "", age: "11", interest: "Space", consent: false });
@@ -164,10 +165,14 @@ export default function App() {
   useEffect(() => { if (user === undefined) return; if (!user) { setScreen("login"); return; } loadChildren(); }, [user]);
   useEffect(() => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {} }, [idx, screen, baseStage]);
 
-  async function loadChildren() { const { data } = await supabase.from("children").select("*").order("created_at"); setChildren(data || []); setScreen(data && data.length ? "picker" : "newchild"); }
+  async function loadChildren() {
+    const { data } = await supabase.from("children").select("*").order("created_at");
+    setChildren(data || []);
+    if (data && data.length) { await resume(data[0]); } else { setScreen("newchild"); }
+  }
   async function loginWithPasscode() {
     const code = passcode.trim().toUpperCase();
-    if (code.length < 6) { setMsg("Enter your full 6-character passcode."); return; }
+    if (code.length < 4) { setMsg("Enter your 4-character passcode."); return; }
     setBusy(true); setMsg("");
     const { error } = await supabase.auth.signInWithPassword({
       email: `${code.toLowerCase()}@yellowowl.app`,
@@ -179,12 +184,22 @@ export default function App() {
   async function registerFamily() {
     setRegBusy(true); setRegMsg("");
     try {
-      const res = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: regPhone.trim(), parentName: regName.trim() }) });
+      const res = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: regPhone.trim(), childName: regChildName.trim(), childAge: Number(regChildAge), childInterest: regChildInterest }) });
       const data = await res.json();
       if (data.error) { setRegMsg(data.error); setRegBusy(false); return; }
       setGeneratedCode(data.passcode);
     } catch { setRegMsg("Something went wrong. Please try again."); }
     setRegBusy(false);
+  }
+  async function forgotPasscode() {
+    setForgotBusy(true); setForgotMsg("");
+    try {
+      const res = await fetch("/api/auth/forgot-passcode", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: forgotPhone.trim() }) });
+      const data = await res.json();
+      if (data.error) { setForgotMsg(data.error); setForgotBusy(false); return; }
+      setForgotCode(data.passcode);
+    } catch { setForgotMsg("Something went wrong. Please try again."); }
+    setForgotBusy(false);
   }
   async function resume(c) { setChild(c); setBaseline(c.baseline_scores || null); const { data } = await supabase.from("sessions").select("*").eq("child_id", c.id).order("week"); setSessions(data || []); setScreen("home"); }
   async function createChild(goBaseline) {
@@ -282,61 +297,136 @@ export default function App() {
         <Eyebrow>Enter your passcode</Eyebrow>
         <input
           type="text"
-          maxLength={6}
-          placeholder="e.g. W3PK7B"
+          maxLength={4}
+          placeholder="e.g. W3K7"
           value={passcode}
           onChange={(e) => { setPasscode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "")); setMsg(""); }}
           onKeyDown={(e) => e.key === "Enter" && !busy && loginWithPasscode()}
-          style={{ width: "100%", marginTop: 14, padding: "16px 18px", borderRadius: 16, border: `2px solid ${C.line}`, borderBottom: `5px solid #E4DCCB`, fontSize: 26, fontFamily: "Fredoka, system-ui", fontWeight: 700, letterSpacing: 6, textAlign: "center", boxSizing: "border-box", outline: "none", color: C.ink, textTransform: "uppercase" }}
+          style={{ width: "100%", marginTop: 14, padding: "16px 18px", borderRadius: 16, border: `2px solid ${C.line}`, borderBottom: `5px solid #E4DCCB`, fontSize: 34, fontFamily: "Fredoka, system-ui", fontWeight: 700, letterSpacing: 14, textAlign: "center", boxSizing: "border-box", outline: "none", color: C.ink, textTransform: "uppercase" }}
         />
         <div style={{ marginTop: 16 }}>
-          <Btn onClick={loginWithPasscode} disabled={busy || passcode.trim().length < 6} style={{ width: "100%" }}>
+          <Btn onClick={loginWithPasscode} disabled={busy || passcode.trim().length < 4} style={{ width: "100%" }}>
             {busy ? "Checking…" : "Let me in →"}
           </Btn>
         </div>
         {msg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10, textAlign: "center" }}>{msg}</p> : null}
-        <p style={{ textAlign: "center", marginTop: 18, marginBottom: 0, fontSize: 14, color: C.slate }}>
-          Don't have a passcode?{" "}
-          <button onClick={() => { setShowRegister(true); setGeneratedCode(""); setRegPhone(""); setRegName(""); setRegMsg(""); }} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, padding: 0, textDecoration: "underline" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20, fontSize: 14 }}>
+          <button onClick={() => { setModalMode("register"); setGeneratedCode(""); setRegPhone(""); setRegChildName(""); setRegChildAge("11"); setRegChildInterest("Space"); setRegConsent(false); setRegMsg(""); }}
+            style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, padding: 0, textDecoration: "underline" }}>
             Register now
           </button>
-        </p>
+          <button onClick={() => { setModalMode("forgot"); setForgotPhone(""); setForgotCode(""); setForgotMsg(""); }}
+            style={{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 400, padding: 0, textDecoration: "underline" }}>
+            Forgot passcode?
+          </button>
+        </div>
       </Card>
 
-      {/* ── Registration modal ── */}
-      {showRegister && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(27,42,69,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={() => !regBusy && setShowRegister(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: C.paper, borderRadius: 24, padding: "28px 24px", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(27,42,69,.22)" }}>
-            {generatedCode ? (
-              /* ── Success state ── */
-              <div style={{ textAlign: "center" }}>
-                <Owl size={64} mood="cheer" />
-                <H size={24} style={{ marginTop: 10 }}>Your passcode is ready!</H>
-                <div style={{ margin: "18px 0", padding: "18px 24px", background: C.cream, borderRadius: 16, border: `2px solid ${C.sun}` }}>
-                  <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 36, letterSpacing: 8, color: C.ink }}>{generatedCode}</div>
-                  <p style={{ color: C.slate, fontSize: 13, marginTop: 6, marginBottom: 0 }}>Write this down — you'll use it every time you log in.</p>
+      {/* ── Modal (register or forgot) ── */}
+      {modalMode && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(27,42,69,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}
+          onClick={() => !regBusy && !forgotBusy && setModalMode(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.paper, borderRadius: 24, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 20px 60px rgba(27,42,69,.22)", maxHeight: "92vh", overflowY: "auto" }}>
+
+            {modalMode === "register" ? (
+              generatedCode ? (
+                /* Registration success */
+                <div style={{ textAlign: "center" }}>
+                  <Owl size={64} mood="cheer" />
+                  <H size={24} style={{ marginTop: 10 }}>You're all set!</H>
+                  <p style={{ color: C.slate, fontSize: 14, marginTop: 6 }}>Your Yellow Owl passcode is:</p>
+                  <div style={{ margin: "18px 0", padding: "20px 24px", background: C.cream, borderRadius: 16, border: `2px solid ${C.sun}` }}>
+                    <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 46, letterSpacing: 14, color: C.ink }}>{generatedCode}</div>
+                    <p style={{ color: C.slate, fontSize: 13, marginTop: 8, marginBottom: 0 }}>Write this down — use it every time you log in.</p>
+                  </div>
+                  <Btn style={{ width: "100%" }} onClick={() => { setModalMode(null); setPasscode(generatedCode); }}>Use it now →</Btn>
                 </div>
-                <Btn style={{ width: "100%" }} onClick={() => { setShowRegister(false); setPasscode(generatedCode); }}>
-                  Use it now →
-                </Btn>
-              </div>
+              ) : (
+                /* Registration form */
+                <>
+                  <H size={24}>Register</H>
+                  <p style={{ color: C.slate, fontSize: 14, marginTop: 4, marginBottom: 18 }}>Set up your child's profile to get a passcode.</p>
+
+                  <Eyebrow color={C.slate}>Child's name</Eyebrow>
+                  <Input placeholder="First name" value={regChildName} onChange={(e) => setRegChildName(e.target.value)} style={{ marginTop: 8 }} />
+
+                  <div style={{ display: "flex", gap: 14, marginTop: 14, alignItems: "flex-end" }}>
+                    <div style={{ width: 110 }}>
+                      <Eyebrow color={C.slate}>Age</Eyebrow>
+                      <select value={regChildAge} onChange={(e) => setRegChildAge(e.target.value)}
+                        style={{ width: "100%", padding: 13, borderRadius: 14, border: `2px solid ${C.line}`, fontSize: 16, marginTop: 8, fontFamily: "Andika", background: C.paper }}>
+                        {[9, 10, 11, 12, 13].map((a) => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ paddingBottom: 6 }}><TrackChip tk={trackFor(regChildAge)} /></div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <Eyebrow color={C.slate}>What they love</Eyebrow>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                      {INTERESTS.map((it) => (
+                        <button key={it} onClick={() => setRegChildInterest(it)}
+                          style={{ padding: "8px 14px", borderRadius: 20, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Fredoka", border: `2px solid ${regChildInterest === it ? C.teal : C.line}`, background: regChildInterest === it ? C.teal : C.paper, color: regChildInterest === it ? C.paper : C.slate }}>
+                          {it}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <Eyebrow color={C.slate}>Parent's phone number</Eyebrow>
+                    <Input type="tel" placeholder="+44 7700 123456" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} style={{ marginTop: 8 }} />
+                  </div>
+
+                  <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 16, fontSize: 13, color: C.slate, cursor: "pointer" }}>
+                    <input type="checkbox" checked={regConsent} onChange={(e) => setRegConsent(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
+                    <span>I am this child's parent or guardian and agree to them using Yellow Owl. Their answers are saved privately — I can export or delete them any time.</span>
+                  </label>
+
+                  {regMsg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10 }}>{regMsg}</p> : null}
+
+                  <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                    <Btn kind="ghost" onClick={() => setModalMode(null)} disabled={regBusy} style={{ flex: 1 }}>Cancel</Btn>
+                    <Btn onClick={registerFamily}
+                      disabled={regBusy || !regChildName.trim() || !regConsent || regPhone.trim().replace(/\D/g, "").length < 7}
+                      style={{ flex: 2 }}>
+                      {regBusy ? "Creating…" : "Get my passcode →"}
+                    </Btn>
+                  </div>
+                </>
+              )
             ) : (
-              /* ── Form state ── */
-              <>
-                <H size={24}>Get your passcode</H>
-                <p style={{ color: C.slate, fontSize: 14, marginTop: 6, marginBottom: 18 }}>Enter your phone number and we'll create a passcode for you.</p>
-                <Eyebrow color={C.slate}>Phone number</Eyebrow>
-                <Input type="tel" placeholder="+44 7700 123456" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} style={{ marginTop: 8 }} />
-                <Eyebrow color={C.slate} style={{ marginTop: 14 }}>Your name (optional)</Eyebrow>
-                <Input placeholder="Parent's name" value={regName} onChange={(e) => setRegName(e.target.value)} style={{ marginTop: 8 }} />
-                {regMsg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10 }}>{regMsg}</p> : null}
-                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-                  <Btn kind="ghost" onClick={() => setShowRegister(false)} disabled={regBusy} style={{ flex: 1 }}>Cancel</Btn>
-                  <Btn onClick={registerFamily} disabled={regBusy || regPhone.trim().replace(/\D/g, "").length < 7} style={{ flex: 2 }}>
-                    {regBusy ? "Creating…" : "Get my passcode →"}
-                  </Btn>
+              /* Forgot passcode */
+              forgotCode ? (
+                /* Forgot success */
+                <div style={{ textAlign: "center" }}>
+                  <Owl size={64} mood="cheer" />
+                  <H size={24} style={{ marginTop: 10 }}>New passcode ready!</H>
+                  <p style={{ color: C.slate, fontSize: 14, marginTop: 6 }}>We've sent it to your phone. It's also here:</p>
+                  <div style={{ margin: "18px 0", padding: "20px 24px", background: C.cream, borderRadius: 16, border: `2px solid ${C.sun}` }}>
+                    <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 46, letterSpacing: 14, color: C.ink }}>{forgotCode}</div>
+                    <p style={{ color: C.slate, fontSize: 13, marginTop: 8, marginBottom: 0 }}>Your old passcode no longer works.</p>
+                  </div>
+                  <Btn style={{ width: "100%" }} onClick={() => { setModalMode(null); setPasscode(forgotCode); }}>Use it now →</Btn>
                 </div>
-              </>
+              ) : (
+                /* Forgot form */
+                <>
+                  <H size={24}>Forgot your passcode?</H>
+                  <p style={{ color: C.slate, fontSize: 14, marginTop: 6, marginBottom: 18 }}>Enter your phone number and we'll create a new passcode for you.</p>
+                  <Eyebrow color={C.slate}>Your phone number</Eyebrow>
+                  <Input type="tel" placeholder="+44 7700 123456" value={forgotPhone} onChange={(e) => setForgotPhone(e.target.value)} style={{ marginTop: 8 }} />
+                  {forgotMsg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10 }}>{forgotMsg}</p> : null}
+                  <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                    <Btn kind="ghost" onClick={() => setModalMode(null)} disabled={forgotBusy} style={{ flex: 1 }}>Cancel</Btn>
+                    <Btn onClick={forgotPasscode}
+                      disabled={forgotBusy || forgotPhone.trim().replace(/\D/g, "").length < 7}
+                      style={{ flex: 2 }}>
+                      {forgotBusy ? "Sending…" : "Get new passcode →"}
+                    </Btn>
+                  </div>
+                </>
+              )
             )}
           </div>
         </div>
@@ -416,7 +506,7 @@ export default function App() {
     return (<Shell>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}><Owl size={54} /><div><H size={26}>{child.name}'s den</H><div style={{ color: C.slate, fontSize: 14 }}>Week {sessions.length + 1} · {child.interest}</div></div></div>
-        <button onClick={() => { setChild(null); setScreen("picker"); }} style={{ background: "none", border: "none", color: C.teal, fontFamily: "Fredoka", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>Switch player</button>
+        <button onClick={() => { setPasscode(""); setChild(null); supabase.auth.signOut(); }} style={{ background: "none", border: "none", color: C.teal, fontFamily: "Fredoka", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>Sign out</button>
       </div>
       <Card accent={C.sun}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}><Eyebrow>Your stars so far</Eyebrow><TrackChip tk={tk} /></div>
