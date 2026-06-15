@@ -13,8 +13,8 @@ const TRACKS = {
   junior: { label: "Explorer", keys: ["creating", "analysing", "evaluating"], keyLabel: { creating: "Coming up with ideas", analysing: "Looking at options", evaluating: "Choosing wisely" }, childLabel: { creating: "My ideas", analysing: "Looking closer", evaluating: "Best choice" }, keyStep: { creating: 5, analysing: 6, evaluating: 7 } },
   senior: { label: "Navigator", keys: ["causation", "patterns", "logic"], keyLabel: { causation: "Finding causes", patterns: "Spotting patterns", logic: "Logical thinking" }, childLabel: { causation: "Finding the why", patterns: "Spotting patterns", logic: "Clear thinking" }, keyStep: { causation: 9, patterns: 10, logic: 12 } },
 };
-const trackFor = (age) => (Number(age) <= 10 ? "junior" : "senior");
-const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse: "grid", evaluate: "choose", decision: "choose", mystery: "choose", information: "choose", dilemma: "verify" };
+const trackFor = (age) => (Number(age) <= 11 ? "junior" : "senior");
+const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse: "choose", evaluate: "choose", decision: "choose", mystery: "choose", information: "choose", dilemma: "verify" };
 const committing = (t) => INTERACTION[t] === "choose" || INTERACTION[t] === "verify";
 const TYPE_META = { generate: { eb: "Idea storm", accent: "#0FA890" }, analyse: { eb: "Look closer", accent: "#2A4368" }, evaluate: { eb: "Big choice", accent: "#F4845F" }, decision: { eb: "Tricky choice", accent: "#F4845F" }, cause: { eb: "Why is this?", accent: "#22B8CF" }, pattern: { eb: "Spot the pattern", accent: "#0FA890" }, mystery: { eb: "Mystery time!", accent: "#F4845F" }, information: { eb: "Who do you trust?", accent: "#2A4368" }, dilemma: { eb: "True or not?", accent: "#F4845F" } };
 
@@ -233,7 +233,7 @@ export default function App() {
     let cb; try { cb = (await authedPost("/api/curveball", { childId: child.id, age: child.age, scenario: ch.scenario, prompt: ch.prompt, options: ch.options, answer })).curveball; } catch { cb = null; }
     setField(ch.id, "curveball", cb || ch.curveball || "Wait — what if one key fact changed? Would you still pick the same thing?"); setBusy(false); setPhase("rethink");
   }
-  function transcript() { return session.map((c, i) => { const r = resp[c.id] || {}, it = INTERACTION[c.type]; let s = `Challenge ${i + 1} [${c.type}, step ${c.step}] ${c.scenario} ${c.prompt}`; if (it === "grid") s += ` | Notes: ${(c.options || []).map((o, j) => `${o}: ${(r.notes || {})[j] || "—"}`).join(" / ")}`; else if (it === "choose") s += ` | Chose: ${r.choice || "—"} | Reason: ${r.reason || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else if (it === "verify") s += ` | Plan: ${r.answer || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else s += ` | Answer: ${r.answer || "—"}`; return s; }).join("\n"); }
+  function transcript() { return session.map((c, i) => { const r = resp[c.id] || {}, it = INTERACTION[c.type]; let s = `Challenge ${i + 1} [${c.type}, step ${c.step}] ${c.scenario} ${c.prompt}`; if (it === "choose") s += ` | Chose: ${r.choice || "—"} | Reason: ${r.reason || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else if (it === "verify") s += ` | Plan: ${r.answer || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else s += ` | Answer: ${r.answer || "—"}`; return s; }).join("\n"); }
   async function finish() {
     setBusy(true); setScreen("loading");
     const keys = T.keys;
@@ -261,7 +261,6 @@ export default function App() {
     const r = resp[ch.id] || {}, it = INTERACTION[ch.type];
     if (it === "choose") return phase === "rethink" ? true : !!r.choice && (r.reason || "").trim().length > 2;
     if (it === "verify") return phase === "rethink" ? true : (r.answer || "").trim().length > 2;
-    if (it === "grid") return Object.values(r.notes || {}).some((v) => (v || "").trim().length > 2);
     return (r.answer || "").trim().length > 2;
   })();
   async function deleteChild() { if (!confirm(`Delete ${child.name} and all their data? This cannot be undone.`)) return; await supabase.from("children").delete().eq("id", child.id); setChild(null); loadChildren(); }
@@ -479,19 +478,7 @@ export default function App() {
               <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Write your thinking here…" />
             ) : null}
 
-            {/* Grid of notes for analyse challenges */}
-            {it === "grid" ? (
-              <div style={{ display: "grid", gap: 12, marginTop: 6 }}>
-                {(ch.options || []).map((o, j) => (
-                  <div key={j}>
-                    <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.navy, marginBottom: 6 }}>{o}</div>
-                    <SmallText minHeight={60} value={(r.notes || {})[j] || ""} onChange={(v) => setField(ch.id, "notes", { ...(r.notes || {}), [j]: v })} placeholder="Who does it help? What could go wrong?" />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {/* MCQ for evaluate, decision, mystery, information */}
+            {/* MCQ for analyse, evaluate, decision, mystery, information */}
             {it === "choose" ? (
               <div style={{ marginTop: 6 }}>
                 <div style={{ display: "grid", gap: 8 }}>
@@ -500,7 +487,7 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <Eyebrow color={C.slate}>{ch.type === "mystery" ? "How do you know?" : "Why did you pick that?"}</Eyebrow>
+                  <Eyebrow color={C.slate}>{ch.type === "mystery" ? "How do you know?" : ch.type === "analyse" ? "Why is this one better?" : "Why did you pick that?"}</Eyebrow>
                   <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why." minHeight={70} />
                 </div>
               </div>
