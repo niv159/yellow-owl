@@ -10,13 +10,15 @@ const ACCENT = { Space: "#5B6CD9", Sports: "#2BA36B", Animals: "#E08A3C", "Video
 const TERMS_VERSION = "v1";
 
 const TRACKS = {
-  junior: { label: "Explorer", keys: ["creating", "analysing", "evaluating"], keyLabel: { creating: "Coming up with ideas", analysing: "Looking at options", evaluating: "Choosing wisely" }, childLabel: { creating: "My ideas", analysing: "Looking closer", evaluating: "Best choice" }, keyStep: { creating: 5, analysing: 6, evaluating: 7 } },
-  senior: { label: "Navigator", keys: ["causation", "patterns", "logic"], keyLabel: { causation: "Finding causes", patterns: "Spotting patterns", logic: "Logical thinking" }, childLabel: { causation: "Finding the why", patterns: "Spotting patterns", logic: "Clear thinking" }, keyStep: { causation: 9, patterns: 10, logic: 12 } },
+  junior: { label: "Explorer", keys: ["finding", "creating", "analysing", "evaluating"], keyLabel: { finding: "Finding information", creating: "Coming up with ideas", analysing: "Looking at options", evaluating: "Choosing wisely" }, childLabel: { finding: "Digging in", creating: "My ideas", analysing: "Looking closer", evaluating: "Best choice" }, keyStep: { finding: 4, creating: 5, analysing: 6, evaluating: 7 } },
+  senior: { label: "Navigator", keys: ["evaluating", "causation", "patterns", "logic"], keyLabel: { evaluating: "Evaluating options", causation: "Finding causes", patterns: "Spotting patterns", logic: "Logical thinking" }, childLabel: { evaluating: "Best choice", causation: "Finding the why", patterns: "Spotting patterns", logic: "Clear thinking" }, keyStep: { evaluating: 7, causation: 9, patterns: 10, logic: 12 } },
 };
 const trackFor = (age) => (Number(age) <= 11 ? "junior" : "senior");
-const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse: "choose", evaluate: "choose", decision: "choose", mystery: "choose", information: "choose", dilemma: "verify" };
-const committing = (t) => INTERACTION[t] === "choose" || INTERACTION[t] === "verify";
-const TYPE_META = { generate: { eb: "Idea storm", accent: "#0FA890" }, analyse: { eb: "Look closer", accent: "#2A4368" }, evaluate: { eb: "Big choice", accent: "#F4845F" }, decision: { eb: "Tricky choice", accent: "#F4845F" }, cause: { eb: "Why is this?", accent: "#22B8CF" }, pattern: { eb: "Spot the pattern", accent: "#0FA890" }, mystery: { eb: "Mystery time!", accent: "#F4845F" }, information: { eb: "Who do you trust?", accent: "#2A4368" }, dilemma: { eb: "True or not?", accent: "#F4845F" } };
+const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse: "choose", evaluate: "choose", decision: "choose", mystery: "choose", information: "choose", dilemma: "verify", research: "choose" };
+// Override text→choose for cause/pattern questions that include MCQ options
+const getIt = (c) => { const raw = INTERACTION[c.type]; return raw === "text" && c.type !== "generate" && (c.options || []).length > 0 ? "choose" : raw; };
+const committing = (t, opts = []) => { const raw = INTERACTION[t]; const it = raw === "text" && t !== "generate" && opts.length > 0 ? "choose" : raw; return it === "choose" || it === "verify"; };
+const TYPE_META = { research: { eb: "Find it out", accent: "#7A6BE0", hint: "Figure out what information you need most." }, generate: { eb: "Brain blast", accent: "#0FA890", hint: "Come up with as many different ideas as you can." }, analyse: { eb: "Look closely", accent: "#2A4368", hint: "Compare both sides before deciding which is better." }, evaluate: { eb: "Big decision", accent: "#F4845F", hint: "Pick the strongest option and say why you chose it." }, decision: { eb: "Your call", accent: "#F4845F", hint: "Think it through — only one option can win." }, cause: { eb: "Why though?", accent: "#22B8CF", hint: "Work out what is really causing this to happen." }, pattern: { eb: "Spot it", accent: "#0FA890", hint: "Find the hidden pattern in the data." }, mystery: { eb: "Crack the case", accent: "#7A6BE0", hint: "Use the clues to work out what really happened." }, information: { eb: "Who to trust?", accent: "#2A4368", hint: "Find the most reliable source of information." }, dilemma: { eb: "Real or not?", accent: "#F4845F", hint: "Think carefully before you commit to an answer." } };
 
 // Fallback content shown when the AI bank has not been seeded yet
 const EMERGENCY = {
@@ -36,6 +38,7 @@ const EMERGENCY_BASE = {
   junior: {
     scenario: "At break time the playground gets very crowded and kids keep bumping into each other.",
     stages: [
+      { step: 4, label: "Find it out", q: "You want to know if a new school trip is right for you. What is most useful to find out first?", options: ["What activities are planned and how much it costs", "How many other children have done the trip before", "What the weather will be like on those days", "What the coach journey looks like"] },
       { step: 5, label: "Lots of ideas", q: "What are different ways you could fix this?", options: ["Make two areas — one for running, one for quiet play", "Tell everyone to walk slowly", "Close the playground", "Do nothing"] },
       { step: 6, label: "Look closer", q: "You have two ideas. What is the best way to compare them?", options: ["Think about who each idea helps and what could go wrong", "Pick the one that sounds most fun", "Ask one friend what they think", "Go with the first idea you thought of"] },
       { step: 7, label: "Pick one", q: "You have to choose one idea to try first. What is the best way to decide?", options: ["Pick the one that helps the most people and has the fewest problems", "Pick the one your best friend likes", "Pick the cheapest one no matter what", "Pick whichever is easiest to explain"] },
@@ -44,6 +47,7 @@ const EMERGENCY_BASE = {
   senior: {
     scenario: "Fewer and fewer children are coming to the after-school science club. The day changed to Friday, two members left, and the room was moved.",
     stages: [
+      { step: 7, label: "Best choice", q: "The school council has £200 to spend on one thing. Which would make the biggest difference to the most students?", options: ["New library books — every student can use them", "A display case for sports trophies — looks nice but limited impact", "A coffee machine for the staff room — helps teachers only", "A new plant for the entrance — low impact on learning"] },
       { step: 9, label: "Find the cause", q: "What is most likely causing fewer children to come?", options: ["The Friday change clashes with other activities most children have", "Children have stopped liking science", "The new room is too far away", "The two members who left were the only interesting ones"] },
       { step: 10, label: "Spot the link", q: "The drop started the same week the day changed. What does this pattern suggest?", options: ["The day change is probably the main cause because the timing matches", "It is just a coincidence — the day does not matter", "The room change must be the cause because rooms matter more", "You cannot tell anything from this pattern"] },
       { step: 12, label: "What next", q: "What can you conclude, and what would you test first?", options: ["The day is the main problem — try moving back and see if numbers recover", "Do nothing — clubs always go up and down", "Change the room back first, then wait a full year", "Ask only the two members who left what they think"] },
@@ -74,8 +78,8 @@ async function assembleSession(track, interest) {
     }
     if (rows && rows.length >= 5) {
       const picked = shuffle(rows).slice(0, 5);
-      if (!picked.some((r) => committing(r.type))) {
-        const c = rows.find((r) => committing(r.type));
+      if (!picked.some((r) => committing(r.type, r.options || []))) {
+        const c = rows.find((r) => committing(r.type, r.options || []));
         if (c) picked[picked.length - 1] = c;
       }
       return picked.map((r) => ({ id: r.id, type: r.type, step: r.step, title: r.title, scenario: r.scenario, prompt: r.prompt, options: r.options || undefined, curveball: r.curveball || undefined }));
@@ -244,11 +248,11 @@ export default function App() {
   };
 
   async function lockCommit() {
-    const r = resp[ch.id] || {}; const answer = INTERACTION[ch.type] === "choose" ? `Chose: ${r.choice || "(none)"}. Because: ${r.reason || ""}` : (r.answer || ""); setBusy(true);
+    const r = resp[ch.id] || {}; const answer = getIt(ch) === "choose" ? `Chose: ${r.choice || "(none)"}. Because: ${r.reason || ""}` : (r.answer || ""); setBusy(true);
     let cb; try { cb = (await authedPost("/api/curveball", { childId: child.id, age: child.age, scenario: ch.scenario, prompt: ch.prompt, options: ch.options, answer })).curveball; } catch { cb = null; }
     setField(ch.id, "curveball", cb || ch.curveball || "Wait — what if one key fact changed? Would you still pick the same thing?"); setBusy(false); setPhase("rethink");
   }
-  function transcript() { return session.map((c, i) => { const r = resp[c.id] || {}, it = INTERACTION[c.type]; let s = `Challenge ${i + 1} [${c.type}, step ${c.step}] ${c.scenario} ${c.prompt}`; if (it === "choose") s += ` | Chose: ${r.choice || "—"} | Reason: ${r.reason || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else if (it === "verify") s += ` | Plan: ${r.answer || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else s += ` | Answer: ${r.answer || "—"}`; return s; }).join("\n"); }
+  function transcript() { return session.map((c, i) => { const r = resp[c.id] || {}, it = getIt(c); let s = `Challenge ${i + 1} [${c.type}, step ${c.step}] ${c.scenario} ${c.prompt}`; if (it === "choose") s += ` | Chose: ${r.choice || "—"} | Reason: ${r.reason || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else if (it === "verify") s += ` | Plan: ${r.answer || "—"}` + (r.curveball ? ` | Coach: ${r.curveball} | Rethink: ${r.revised || "—"}` : ""); else s += ` | Answer: ${r.answer || "—"}`; return s; }).join("\n"); }
   async function finish() {
     setBusy(true); setScreen("loading");
     const keys = T.keys;
@@ -273,7 +277,7 @@ export default function App() {
   const next = () => { if (idx + 1 < session.length) { setIdx(idx + 1); setPhase("answer"); } else finish(); };
   const answered = (() => {
     if (!ch) return false;
-    const r = resp[ch.id] || {}, it = INTERACTION[ch.type];
+    const r = resp[ch.id] || {}, it = getIt(ch);
     if (it === "choose") return phase === "rethink" ? true : !!r.choice && (r.reason || "").trim().length > 2;
     if (it === "verify") return phase === "rethink" ? true : (r.answer || "").trim().length > 2;
     return (r.answer || "").trim().length > 2;
@@ -531,7 +535,7 @@ export default function App() {
 
   // ── SESSION ──
   if (screen === "session" && ch) {
-    const r = resp[ch.id] || {}, it = INTERACTION[ch.type], meta = TYPE_META[ch.type] || { eb: ch.type, accent: C.teal }, remaining = session.length - idx - 1;
+    const r = resp[ch.id] || {}, it = getIt(ch), meta = TYPE_META[ch.type] || { eb: ch.type, accent: C.teal, hint: null }, remaining = session.length - idx - 1;
     const ghost = (dy, sc, op) => ({ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, transform: `translateY(${dy}px) scale(${sc})`, background: C.paper, border: `1px solid ${C.line}`, borderRadius: 24, opacity: op, zIndex: 1 });
     // How many list boxes to show: parse from prompt text, fall back to per-type defaults
     const ideaCount = ch.type === "generate"
@@ -542,7 +546,7 @@ export default function App() {
     return (<Shell>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         {session.map((_, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 22, height: 3, background: i <= idx ? C.teal : C.line }} /> : null}<div style={{ width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: i < idx ? C.teal : i === idx ? C.sun : C.paper, border: `2px solid ${i <= idx ? "transparent" : C.line}`, color: i < idx ? C.paper : C.ink, fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{i < idx ? "✓" : i + 1}</div></React.Fragment>))}
-        <span style={{ marginLeft: "auto", fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 14 }}>Stop {idx + 1} of {session.length}</span>
+        <span style={{ marginLeft: "auto", fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 14 }}>Challenge {idx + 1} of {session.length}</span>
       </div>
       <div style={{ position: "relative" }}>
         {remaining > 0 ? <div style={ghost(10, .97, .7)} /> : null}
@@ -550,10 +554,19 @@ export default function App() {
         <div key={idx} style={{ position: "relative", zIndex: 2, animation: "deal .4s ease" }}>
           <Card accent={meta.accent}>
             <Scene interest={child.interest} />
-            <Eyebrow color={meta.accent}>{meta.eb}</Eyebrow>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 20, background: meta.accent, color: "#fff", fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{meta.eb}</span>
+            </div>
+            {meta.hint ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 6px", lineHeight: 1.4 }}>{meta.hint}</p> : null}
             <H size={26}>{ch.title}</H>
-            <p style={{ fontSize: 18, lineHeight: 1.6, marginTop: 10 }}>{ch.scenario}</p>
-            <p style={{ fontSize: 17, lineHeight: 1.6, color: C.navy, fontWeight: 500 }}>{ch.prompt}</p>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: C.slate, marginBottom: 4 }}>The situation</div>
+              <p style={{ fontSize: 17, lineHeight: 1.65, margin: 0 }}>{ch.scenario}</p>
+            </div>
+            <div style={{ marginTop: 14, padding: "12px 16px", borderRadius: 14, borderLeft: `4px solid ${meta.accent}`, background: `${meta.accent}12` }}>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: meta.accent, fontSize: 13, marginBottom: 3 }}>Your mission</div>
+              <p style={{ fontSize: 16, lineHeight: 1.6, color: C.navy, fontWeight: 600, margin: 0 }}>{ch.prompt}</p>
+            </div>
 
             {/* Numbered list boxes when prompt asks for multiple items, plain text otherwise */}
             {it === "text" && ideaCount > 0 ? (
@@ -565,7 +578,7 @@ export default function App() {
               />
             ) : null}
             {it === "text" && ideaCount === 0 ? (
-              <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Write your thinking here…" />
+              <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Tell the owl what you think…" />
             ) : null}
 
             {/* MCQ for analyse, evaluate, decision, mystery, information */}
@@ -577,8 +590,8 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <Eyebrow color={C.slate}>{ch.type === "mystery" ? "How do you know?" : ch.type === "analyse" ? "Why is this one better?" : "Why did you pick that?"}</Eyebrow>
-                  <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why." minHeight={70} />
+                  <Eyebrow color={C.slate}>{ch.type === "mystery" ? "How do you know?" : ch.type === "analyse" ? "Why is this one better?" : ch.type === "research" ? "Why is that most useful?" : "Why did you pick that?"}</Eyebrow>
+                  <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why…" minHeight={70} />
                 </div>
               </div>
             ) : null}
@@ -590,21 +603,21 @@ export default function App() {
 
             {/* Curveball / rethink */}
             {phase === "rethink" && r.curveball ? (
-              <div style={{ marginTop: 16, padding: 18, borderRadius: 18, background: "#FFF6E8", border: `2px solid ${C.sun}`, animation: "slidein .4s ease" }}>
+              <div style={{ marginTop: 16, padding: 18, borderRadius: 18, background: "#FFF6E8", border: `3px solid ${C.sun}`, animation: "slidein .4s ease" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                  <div style={{ flexShrink: 0 }}><Owl size={46} mood="think" /></div>
-                  <div><div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.coral, fontSize: 14 }}>Wait a sec…</div><p style={{ margin: "4px 0 0", fontSize: 17, lineHeight: 1.55 }}>{r.curveball}</p></div>
+                  <div style={{ flexShrink: 0 }}><Owl size={52} mood="think" /></div>
+                  <div><div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.coral, fontSize: 15 }}>Wait — there's a twist!</div><p style={{ margin: "6px 0 0", fontSize: 17, lineHeight: 1.55, fontWeight: 500 }}>{r.curveball}</p></div>
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <SmallText minHeight={70} value={r.revised || ""} onChange={(v) => setField(ch.id, "revised", v)} placeholder="Does this change your mind? Say why." />
+                  <SmallText minHeight={70} value={r.revised || ""} onChange={(v) => setField(ch.id, "revised", v)} placeholder="Does this change your mind? Tell the owl why." />
                 </div>
               </div>
             ) : null}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 22 }}>
-              {committing(ch.type) && phase === "answer"
-                ? <Btn kind="warm" onClick={lockCommit} disabled={!answered || busy}>{busy ? "Thinking…" : "That's my answer →"}</Btn>
-                : <Btn onClick={next} disabled={!answered || busy}>{idx + 1 < session.length ? "Next →" : "Finish! →"}</Btn>}
+              {committing(ch.type, ch.options || []) && phase === "answer"
+                ? <Btn kind="warm" onClick={lockCommit} disabled={!answered || busy}>{busy ? "Thinking…" : "Lock it in →"}</Btn>
+                : <Btn onClick={next} disabled={!answered || busy}>{idx + 1 < session.length ? "Keep going →" : "All done! →"}</Btn>}
             </div>
           </Card>
         </div>

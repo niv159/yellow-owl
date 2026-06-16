@@ -12,6 +12,10 @@ const admin = createClient(
 // quality signals from the transcript text.
 
 const CHILD_TIPS = {
+  finding: [
+    "Good work thinking about what you need to know! Next time, ask yourself 'what would prove it one way or the other?' — that is the key question.",
+    "Nice job tracking down information! Try asking 'is this source trying to sell me something?' — that helps spot the tricky ones.",
+  ],
   creating: [
     "You came up with some great ideas! Next time, try pushing for one more — the unusual ones are often the best.",
     "Good thinking! Try asking yourself 'what if everything was different?' to find ideas no one else would think of.",
