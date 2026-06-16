@@ -31,8 +31,12 @@ create table if not exists sessions (
   narrative      text default '',
   highlights     jsonb default '[]',
   transcript     text default '',
+  challenges     jsonb default '[]',
   created_at     timestamptz default now()
 );
+
+-- Add challenges column to existing tables (safe to run on existing DBs)
+alter table sessions add column if not exists challenges jsonb default '[]';
 
 create table if not exists content_bank (
   id          uuid primary key default gen_random_uuid(),

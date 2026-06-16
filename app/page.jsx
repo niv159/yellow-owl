@@ -282,15 +282,39 @@ export default function App() {
     }
     const scores = {}; keys.forEach((k) => (scores[k] = Number(d[k]) || 2));
     let highlights = d.highlights; if (!highlights || !highlights.length) highlights = session.map((c) => (resp[c.id] || {}).answer || (resp[c.id] || {}).reason).filter(Boolean).slice(0, 2);
-    const entry = { child_id: child.id, week: sessions.length + 1, scores, responsiveness: d.responsiveness ?? 2, child_tip: d.childTip || "Great work — keep explaining your thinking!", weakness: d.weakness || "", narrative: d.narrative || "", highlights, transcript: transcript() };
+    // Build structured challenge+response data for the portfolio/share page
+    const challengesData = session.map((c) => {
+      const r = resp[c.id] || {};
+      return {
+        type: c.type, step: c.step, title: c.title,
+        scenario: c.scenario, prompt: c.prompt,
+        options: c.options || null,
+        response: {
+          choice: r.choice || null, reason: r.reason || null,
+          answer: r.answer || null, ideas: r.ideas || null,
+          curveball: r.curveball || null, revised: r.revised || null,
+        },
+      };
+    });
+    const entry = { child_id: child.id, week: sessions.length + 1, scores, responsiveness: d.responsiveness ?? 2, child_tip: d.childTip || "Great work — keep explaining your thinking!", weakness: d.weakness || "", narrative: d.narrative || "", highlights, transcript: transcript(), challenges: challengesData };
+    let savedId = null;
     try {
       const { data: saved } = await supabase.from("sessions").insert(entry).select().single();
+      savedId = saved?.id || null;
       setSessions([...sessions, saved || entry]);
     } catch (e) {
       console.error("Session save failed:", e);
       setSessions([...sessions, entry]);
     }
     setReport({ ...entry, scores }); setBusy(false); setScreen("summary");
+    // Fire-and-forget: send WhatsApp portfolio link to parent after successful save
+    if (savedId) {
+      authedPost("/api/send-report", {
+        sessionId: savedId, childId: child.id,
+        childName: child.name, week: sessions.length + 1,
+        challenges: challengesData,
+      }).catch((e) => console.warn("send-report failed:", e.message));
+    }
   }
   const next = () => { if (idx + 1 < session.length) { setIdx(idx + 1); setPhase("answer"); setRevealStage(0); } else finish(); };
   const answered = (() => {
