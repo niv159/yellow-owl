@@ -162,7 +162,7 @@ export default function App() {
   const [child, setChild] = useState(null); const [sessions, setSessions] = useState([]);
   const [form, setForm] = useState({ name: "", age: "11", interest: "Space", consent: false });
   const [baseDef, setBaseDef] = useState(null); const [baseAns, setBaseAns] = useState({}); const [baseStage, setBaseStage] = useState("answer"); const [baseline, setBaseline] = useState(null);
-  const [session, setSession] = useState([]); const [idx, setIdx] = useState(0); const [resp, setResp] = useState({});
+  const [session, setSession] = useState([]); const [idx, setIdx] = useState(0); const [resp, setResp] = useState({}); const [revealStage, setRevealStage] = useState(0);
   const [phase, setPhase] = useState("answer"); const [busy, setBusy] = useState(false); const [report, setReport] = useState(null); const [grown, setGrown] = useState(false); const [msg, setMsg] = useState("");
 
   useEffect(() => { supabase.auth.getSession().then(({ data }) => setUser(data?.session?.user || null)); const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null)); return () => sub.subscription.unsubscribe(); }, []);
@@ -233,7 +233,7 @@ export default function App() {
   async function startSession(c) {
     const useChild = c || child; setBusy(true); setScreen("loading");
     const s = await assembleSession(useChild.track, useChild.interest);
-    setSession(s); setIdx(0); setResp({}); setPhase("answer"); setReport(null); setGrown(false); setBusy(false); setScreen("session");
+    setSession(s); setIdx(0); setResp({}); setPhase("answer"); setReport(null); setGrown(false); setBusy(false); setRevealStage(0); setScreen("session");
   }
   const ch = session[idx];
   const setField = (id, f, v) => setResp((r) => ({ ...r, [id]: { ...r[id], [f]: v } }));
@@ -274,7 +274,7 @@ export default function App() {
     }
     setReport({ ...entry, scores }); setBusy(false); setScreen("summary");
   }
-  const next = () => { if (idx + 1 < session.length) { setIdx(idx + 1); setPhase("answer"); } else finish(); };
+  const next = () => { if (idx + 1 < session.length) { setIdx(idx + 1); setPhase("answer"); setRevealStage(0); } else finish(); };
   const answered = (() => {
     if (!ch) return false;
     const r = resp[ch.id] || {}, it = getIt(ch);
@@ -537,12 +537,31 @@ export default function App() {
   if (screen === "session" && ch) {
     const r = resp[ch.id] || {}, it = getIt(ch), meta = TYPE_META[ch.type] || { eb: ch.type, accent: C.teal, hint: null }, remaining = session.length - idx - 1;
     const ghost = (dy, sc, op) => ({ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, transform: `translateY(${dy}px) scale(${sc})`, background: C.paper, border: `1px solid ${C.line}`, borderRadius: 24, opacity: op, zIndex: 1 });
-    // How many list boxes to show: parse from prompt text, fall back to per-type defaults
     const ideaCount = ch.type === "generate"
       ? (listCount(ch.prompt) || 5)
       : ch.type === "cause"
       ? (listCount(ch.prompt) || 3)
       : listCount(ch.prompt);
+    const answerLabel = it === "choose" ? "Pick one" : it === "verify" ? "Your reasoning" : "Your ideas";
+    const reasonLabel = ch.type === "mystery" ? "How do you know?" : ch.type === "analyse" ? "Why is this one better?" : ch.type === "research" ? "Why is that most useful?" : "Why did you pick that?";
+
+    // Card header: always visible in both reveal stages
+    const cardTop = (
+      <>
+        <Scene interest={child.interest} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 20, background: meta.accent, color: "#fff", fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{meta.eb}</span>
+        </div>
+        {meta.hint ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 6px", lineHeight: 1.4 }}>{meta.hint}</p> : null}
+        <H size={26}>{ch.title}</H>
+        {/* Situation box */}
+        <div style={{ marginTop: 10, padding: "12px 16px", borderRadius: 14, background: "#F0F4FA", border: `1px solid #D8E2F0` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: "#7A8FA8", marginBottom: 6 }}>The situation</div>
+          <p style={{ fontSize: 17, lineHeight: 1.65, margin: 0 }}>{ch.scenario}</p>
+        </div>
+      </>
+    );
+
     return (<Shell>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         {session.map((_, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 22, height: 3, background: i <= idx ? C.teal : C.line }} /> : null}<div style={{ width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: i < idx ? C.teal : i === idx ? C.sun : C.paper, border: `2px solid ${i <= idx ? "transparent" : C.line}`, color: i < idx ? C.paper : C.ink, fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{i < idx ? "✓" : i + 1}</div></React.Fragment>))}
@@ -552,74 +571,86 @@ export default function App() {
         {remaining > 0 ? <div style={ghost(10, .97, .7)} /> : null}
         {remaining > 1 ? <div style={ghost(20, .94, .45)} /> : null}
         <div key={idx} style={{ position: "relative", zIndex: 2, animation: "deal .4s ease" }}>
-          <Card accent={meta.accent}>
-            <Scene interest={child.interest} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 20, background: meta.accent, color: "#fff", fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{meta.eb}</span>
-            </div>
-            {meta.hint ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 6px", lineHeight: 1.4 }}>{meta.hint}</p> : null}
-            <H size={26}>{ch.title}</H>
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: C.slate, marginBottom: 4 }}>The situation</div>
-              <p style={{ fontSize: 17, lineHeight: 1.65, margin: 0 }}>{ch.scenario}</p>
-            </div>
-            <div style={{ marginTop: 14, padding: "12px 16px", borderRadius: 14, borderLeft: `4px solid ${meta.accent}`, background: `${meta.accent}12` }}>
-              <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: meta.accent, fontSize: 13, marginBottom: 3 }}>Your mission</div>
-              <p style={{ fontSize: 16, lineHeight: 1.6, color: C.navy, fontWeight: 600, margin: 0 }}>{ch.prompt}</p>
-            </div>
 
-            {/* Numbered list boxes when prompt asks for multiple items, plain text otherwise */}
-            {it === "text" && ideaCount > 0 ? (
-              <IdeaList
-                count={ideaCount}
-                values={r.ideas || []}
-                label={ch.type === "generate" ? "Idea" : ch.type === "cause" ? "Reason" : "Point"}
-                onChange={(i2, val) => updateIdea(ch.id, i2, val, ideaCount)}
-              />
-            ) : null}
-            {it === "text" && ideaCount === 0 ? (
-              <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Tell the owl what you think…" />
-            ) : null}
-
-            {/* MCQ for analyse, evaluate, decision, mystery, information */}
-            {it === "choose" ? (
-              <div style={{ marginTop: 6 }}>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {(ch.options || []).map((o, j) => (
-                    <MCQOption key={j} label={o} selected={r.choice === o} disabled={phase === "rethink"} onClick={() => setField(ch.id, "choice", o)} />
-                  ))}
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <Eyebrow color={C.slate}>{ch.type === "mystery" ? "How do you know?" : ch.type === "analyse" ? "Why is this one better?" : ch.type === "research" ? "Why is that most useful?" : "Why did you pick that?"}</Eyebrow>
-                  <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why…" minHeight={70} />
-                </div>
+          {/* ── Stage 0: situation only ── */}
+          {revealStage === 0 ? (
+            <Card accent={meta.accent}>
+              {cardTop}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 22 }}>
+                <Btn onClick={() => setRevealStage(1)}>Got it — show the mission →</Btn>
               </div>
-            ) : null}
+            </Card>
+          ) : (
+            /* ── Stage 1: mission + answer zone ── */
+            <Card accent={meta.accent}>
+              {cardTop}
 
-            {/* Text for dilemma (verify) */}
-            {it === "verify" ? (
-              <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} disabled={phase === "rethink"} placeholder="How would you check if it's true?" minHeight={80} />
-            ) : null}
-
-            {/* Curveball / rethink */}
-            {phase === "rethink" && r.curveball ? (
-              <div style={{ marginTop: 16, padding: 18, borderRadius: 18, background: "#FFF6E8", border: `3px solid ${C.sun}`, animation: "slidein .4s ease" }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                  <div style={{ flexShrink: 0 }}><Owl size={52} mood="think" /></div>
-                  <div><div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.coral, fontSize: 15 }}>Wait — there's a twist!</div><p style={{ margin: "6px 0 0", fontSize: 17, lineHeight: 1.55, fontWeight: 500 }}>{r.curveball}</p></div>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <SmallText minHeight={70} value={r.revised || ""} onChange={(v) => setField(ch.id, "revised", v)} placeholder="Does this change your mind? Tell the owl why." />
-                </div>
+              {/* Mission box */}
+              <div style={{ marginTop: 12, padding: "12px 16px", borderRadius: 14, borderLeft: `4px solid ${meta.accent}`, background: `${meta.accent}12`, animation: "slidein .35s ease" }}>
+                <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: meta.accent, fontSize: 13, marginBottom: 3 }}>Your mission</div>
+                <p style={{ fontSize: 16, lineHeight: 1.6, color: C.navy, fontWeight: 600, margin: 0 }}>{ch.prompt}</p>
               </div>
-            ) : null}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 22 }}>
-              {committing(ch.type, ch.options || []) && phase === "answer"
-                ? <Btn kind="warm" onClick={lockCommit} disabled={!answered || busy}>{busy ? "Thinking…" : "Lock it in →"}</Btn>
-                : <Btn onClick={next} disabled={!answered || busy}>{idx + 1 < session.length ? "Keep going →" : "All done! →"}</Btn>}
-            </div>
-          </Card>
+              {/* Answer zone */}
+              <div style={{ marginTop: 14, padding: "16px 14px 12px", borderRadius: 16, background: C.cream, border: `1px solid ${C.line}`, animation: "slidein .5s ease" }}>
+                <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>{answerLabel}</div>
+
+                {/* MCQ — 2-column grid */}
+                {it === "choose" ? (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      {(ch.options || []).map((o, j) => {
+                        const lastOdd = j === (ch.options.length - 1) && ch.options.length % 2 !== 0;
+                        return (
+                          <div key={j} style={lastOdd ? { gridColumn: "1 / -1" } : undefined}>
+                            <MCQOption label={o} selected={r.choice === o} disabled={phase === "rethink"} onClick={() => setField(ch.id, "choice", o)} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+                      <Eyebrow color={C.slate}>{reasonLabel}</Eyebrow>
+                      <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why…" minHeight={70} />
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Text — numbered list */}
+                {it === "text" && ideaCount > 0 ? (
+                  <IdeaList count={ideaCount} values={r.ideas || []} label={ch.type === "generate" ? "Idea" : ch.type === "cause" ? "Reason" : "Point"} onChange={(i2, val) => updateIdea(ch.id, i2, val, ideaCount)} />
+                ) : null}
+
+                {/* Text — free-form */}
+                {it === "text" && ideaCount === 0 ? (
+                  <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} placeholder="Tell the owl what you think…" />
+                ) : null}
+
+                {/* Verify */}
+                {it === "verify" ? (
+                  <SmallText value={r.answer || ""} onChange={(v) => setField(ch.id, "answer", v)} disabled={phase === "rethink"} placeholder="How would you check if it's true?" minHeight={80} />
+                ) : null}
+              </div>
+
+              {/* Curveball */}
+              {phase === "rethink" && r.curveball ? (
+                <div style={{ marginTop: 16, padding: 18, borderRadius: 18, background: "#FFF6E8", border: `3px solid ${C.sun}`, animation: "slidein .4s ease" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <div style={{ flexShrink: 0 }}><Owl size={52} mood="think" /></div>
+                    <div><div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.coral, fontSize: 15 }}>Wait — there's a twist!</div><p style={{ margin: "6px 0 0", fontSize: 17, lineHeight: 1.55, fontWeight: 500 }}>{r.curveball}</p></div>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <SmallText minHeight={70} value={r.revised || ""} onChange={(v) => setField(ch.id, "revised", v)} placeholder="Does this change your mind? Tell the owl why." />
+                  </div>
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 22 }}>
+                {committing(ch.type, ch.options || []) && phase === "answer"
+                  ? <Btn kind="warm" onClick={lockCommit} disabled={!answered || busy}>{busy ? "Thinking…" : "Lock it in →"}</Btn>
+                  : <Btn onClick={next} disabled={!answered || busy}>{idx + 1 < session.length ? "Keep going →" : "All done! →"}</Btn>}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
     </Shell>);
