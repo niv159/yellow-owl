@@ -19,7 +19,7 @@ export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid request." }, { status: 400 }); }
 
-  const { phone, childName, childAge, childInterest } = body;
+  const { phone, childName, childAge, childInterest, timeLimit } = body;
   const cleanPhone = (phone || "").trim();
 
   if (!cleanPhone || cleanPhone.replace(/\D/g, "").length < 7) {
@@ -67,6 +67,7 @@ export async function POST(req) {
       age: Number(childAge) || 11,
       track,
       interest: childInterest || "Space",
+      time_limit: Number(timeLimit) || 15,
     })
     .select()
     .single();

@@ -13,8 +13,12 @@ create table if not exists children (
   track           text not null check (track in ('junior', 'senior')),
   interest        text not null,
   baseline_scores jsonb,
+  time_limit      integer default 15,
   created_at      timestamptz default now()
 );
+
+-- Add time_limit to existing tables without it (safe to run on existing DBs)
+alter table children add column if not exists time_limit integer default 15;
 
 create table if not exists sessions (
   id             uuid primary key default gen_random_uuid(),

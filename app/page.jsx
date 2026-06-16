@@ -19,6 +19,7 @@ const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse:
 const getIt = (c) => { const raw = INTERACTION[c.type]; return raw === "text" && c.type !== "generate" && (c.options || []).length > 0 ? "choose" : raw; };
 const committing = (t, opts = []) => { const raw = INTERACTION[t]; const it = raw === "text" && t !== "generate" && opts.length > 0 ? "choose" : raw; return it === "choose" || it === "verify"; };
 const TYPE_META = { research: { eb: "Find it out", accent: "#7A6BE0", hint: "Figure out what information you need most." }, generate: { eb: "Brain blast", accent: "#0FA890", hint: "Come up with as many different ideas as you can." }, analyse: { eb: "Look closely", accent: "#2A4368", hint: "Compare both sides before deciding which is better." }, evaluate: { eb: "Big decision", accent: "#F4845F", hint: "Pick the strongest option and say why you chose it." }, decision: { eb: "Your call", accent: "#F4845F", hint: "Think it through — only one option can win." }, cause: { eb: "Why though?", accent: "#22B8CF", hint: "Work out what is really causing this to happen." }, pattern: { eb: "Spot it", accent: "#0FA890", hint: "Find the hidden pattern in the data." }, mystery: { eb: "Crack the case", accent: "#7A6BE0", hint: "Use the clues to work out what really happened." }, information: { eb: "Who to trust?", accent: "#2A4368", hint: "Find the most reliable source of information." }, dilemma: { eb: "Real or not?", accent: "#F4845F", hint: "Think carefully before you commit to an answer." } };
+const STEP_DESC = { 4: "Finding information", 5: "Creating options", 6: "Analysing options", 7: "Evaluating options", 9: "Causation", 10: "Recognising patterns", 12: "Logical reasoning" };
 
 // Fallback content shown when the AI bank has not been seeded yet
 const EMERGENCY = {
@@ -134,14 +135,29 @@ function IdeaList({ count, values, onChange, label = "Idea" }) {
   );
 }
 
-// MCQ option button
-const MCQOption = ({ label, selected, onClick, disabled }) => (
-  <div role="button" tabIndex={disabled ? -1 : 0} onClick={disabled ? undefined : onClick}
-    onKeyDown={(e) => !disabled && e.key === "Enter" && onClick()}
-    style={{ padding: "12px 16px", borderRadius: 14, cursor: disabled ? "default" : "pointer", fontSize: 15, lineHeight: 1.5, border: `2px solid ${selected ? C.teal : C.line}`, background: selected ? "#E7F6F2" : C.paper, fontWeight: selected ? 700 : 400, color: C.ink, transition: "border-color .12s, background .12s" }}>
-    {label}
-  </div>
-);
+// MCQ option button — status: "correct" | "wrong" | "showCorrect" | undefined
+const MCQOption = ({ label, selected, onClick, disabled, status }) => {
+  const isCorrect = status === "correct";
+  const isWrong = status === "wrong";
+  const isShowCorrect = status === "showCorrect";
+  let border = selected && !status ? C.teal : C.line;
+  let bg = selected && !status ? "#E7F6F2" : C.paper;
+  let color = C.ink;
+  let fw = selected && !status ? 700 : 400;
+  if (isCorrect) { border = "#2BA36B"; bg = "#E5F7EE"; color = "#1A6B40"; fw = 700; }
+  if (isWrong)   { border = C.coral;   bg = "#FEF0EE"; color = "#B83A23"; fw = 700; }
+  if (isShowCorrect) { border = "#2BA36B"; bg = "#E5F7EE"; color = "#1A6B40"; fw = 700; }
+  return (
+    <div role="button" tabIndex={disabled ? -1 : 0} onClick={disabled ? undefined : onClick}
+      onKeyDown={(e) => !disabled && e.key === "Enter" && onClick && onClick()}
+      style={{ padding: "12px 16px", borderRadius: 14, cursor: disabled || status ? "default" : "pointer", fontSize: 15, lineHeight: 1.5, border: `2px solid ${border}`, background: bg, fontWeight: fw, color, transition: "border-color .12s, background .12s", display: "flex", gap: 8, alignItems: "flex-start" }}>
+      {isCorrect && <span style={{ flexShrink: 0 }}>✓</span>}
+      {isShowCorrect && <span style={{ flexShrink: 0 }}>✓</span>}
+      {isWrong && <span style={{ flexShrink: 0 }}>✗</span>}
+      <span>{label}</span>
+    </div>
+  );
+};
 
 function Bars({ tk, scores, base }) { const T = TRACKS[tk]; return (<div style={{ display: "grid", gap: 14 }}>{T.keys.map((k) => (<div key={k}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 5 }}><span style={{ fontWeight: 600 }}>{T.keyLabel[k]} <span style={{ color: C.slate, fontWeight: 400 }}>· step {T.keyStep[k]}</span></span><span style={{ color: C.slate, fontFamily: "Fredoka" }}>{scores[k]}/4</span></div><div style={{ position: "relative", height: 11, borderRadius: 8, background: C.line }}><div style={{ width: `${(scores[k] / 4) * 100}%`, height: "100%", borderRadius: 8, background: C.teal }} />{base && typeof base[k] === "number" ? <div title="where you started" style={{ position: "absolute", top: -3, left: `calc(${(base[k] / 4) * 100}% - 1px)`, width: 2, height: 17, background: C.navy }} /> : null}</div></div>))}</div>); }
 
@@ -155,19 +171,21 @@ export default function App() {
   const [user, setUser] = useState(undefined);
   const [passcode, setPasscode] = useState("");
   const [modalMode, setModalMode] = useState(null); // null | "register" | "forgot"
-  const [regPhone, setRegPhone] = useState(""); const [regChildName, setRegChildName] = useState(""); const [regChildAge, setRegChildAge] = useState("11"); const [regChildInterest, setRegChildInterest] = useState("Space"); const [regConsent, setRegConsent] = useState(false);
+  const [regPhone, setRegPhone] = useState(""); const [regChildName, setRegChildName] = useState(""); const [regChildAge, setRegChildAge] = useState("11"); const [regChildInterest, setRegChildInterest] = useState("Space"); const [regConsent, setRegConsent] = useState(false); const [regTimeLimit, setRegTimeLimit] = useState("15");
   const [generatedCode, setGeneratedCode] = useState(""); const [regBusy, setRegBusy] = useState(false); const [regMsg, setRegMsg] = useState("");
   const [forgotPhone, setForgotPhone] = useState(""); const [forgotCode, setForgotCode] = useState(""); const [forgotBusy, setForgotBusy] = useState(false); const [forgotMsg, setForgotMsg] = useState("");
   const [children, setChildren] = useState([]);
   const [child, setChild] = useState(null); const [sessions, setSessions] = useState([]);
   const [form, setForm] = useState({ name: "", age: "11", interest: "Space", consent: false });
   const [baseDef, setBaseDef] = useState(null); const [baseAns, setBaseAns] = useState({}); const [baseStage, setBaseStage] = useState("answer"); const [baseline, setBaseline] = useState(null);
-  const [session, setSession] = useState([]); const [idx, setIdx] = useState(0); const [resp, setResp] = useState({}); const [revealStage, setRevealStage] = useState(0);
+  const [session, setSession] = useState([]); const [idx, setIdx] = useState(0); const [resp, setResp] = useState({}); const [revealStage, setRevealStage] = useState(0); const [timeLeft, setTimeLeft] = useState(null);
   const [phase, setPhase] = useState("answer"); const [busy, setBusy] = useState(false); const [report, setReport] = useState(null); const [grown, setGrown] = useState(false); const [msg, setMsg] = useState("");
 
   useEffect(() => { supabase.auth.getSession().then(({ data }) => setUser(data?.session?.user || null)); const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null)); return () => sub.subscription.unsubscribe(); }, []);
   useEffect(() => { if (user === undefined) return; if (!user) { setScreen("login"); return; } loadChildren(); }, [user]);
   useEffect(() => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {} }, [idx, screen, baseStage]);
+  useEffect(() => { if (screen !== "session" || timeLeft === null || timeLeft <= 0) return; const t = setTimeout(() => setTimeLeft((p) => p - 1), 1000); return () => clearTimeout(t); }, [screen, timeLeft]);
+  useEffect(() => { if (screen === "session" && timeLeft === 0) finish(); }, [screen, timeLeft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadChildren() {
     const { data } = await supabase.from("children").select("*").order("created_at");
@@ -188,7 +206,7 @@ export default function App() {
   async function registerFamily() {
     setRegBusy(true); setRegMsg("");
     try {
-      const res = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: regPhone.trim(), childName: regChildName.trim(), childAge: Number(regChildAge), childInterest: regChildInterest }) });
+      const res = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: regPhone.trim(), childName: regChildName.trim(), childAge: Number(regChildAge), childInterest: regChildInterest, timeLimit: Number(regTimeLimit) }) });
       const data = await res.json();
       if (data.error) { setRegMsg(data.error); setRegBusy(false); return; }
       setGeneratedCode(data.passcode);
@@ -233,7 +251,7 @@ export default function App() {
   async function startSession(c) {
     const useChild = c || child; setBusy(true); setScreen("loading");
     const s = await assembleSession(useChild.track, useChild.interest);
-    setSession(s); setIdx(0); setResp({}); setPhase("answer"); setReport(null); setGrown(false); setBusy(false); setRevealStage(0); setScreen("session");
+    const limit = (useChild.time_limit || 15) * 60; setSession(s); setIdx(0); setResp({}); setPhase("answer"); setReport(null); setGrown(false); setBusy(false); setRevealStage(0); setTimeLeft(limit); setScreen("session");
   }
   const ch = session[idx];
   const setField = (id, f, v) => setResp((r) => ({ ...r, [id]: { ...r[id], [f]: v } }));
@@ -315,7 +333,7 @@ export default function App() {
         </div>
         {msg ? <p style={{ color: C.coral, fontSize: 13, marginTop: 10, textAlign: "center" }}>{msg}</p> : null}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20, fontSize: 14 }}>
-          <button onClick={() => { setModalMode("register"); setGeneratedCode(""); setRegPhone(""); setRegChildName(""); setRegChildAge("11"); setRegChildInterest("Space"); setRegConsent(false); setRegMsg(""); }}
+          <button onClick={() => { setModalMode("register"); setGeneratedCode(""); setRegPhone(""); setRegChildName(""); setRegChildAge("11"); setRegChildInterest("Space"); setRegConsent(false); setRegMsg(""); setRegTimeLimit("15"); }}
             style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, padding: 0, textDecoration: "underline" }}>
             Register now
           </button>
@@ -372,6 +390,18 @@ export default function App() {
                         <button key={it} onClick={() => setRegChildInterest(it)}
                           style={{ padding: "8px 14px", borderRadius: 20, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Fredoka", border: `2px solid ${regChildInterest === it ? C.teal : C.line}`, background: regChildInterest === it ? C.teal : C.paper, color: regChildInterest === it ? C.paper : C.slate }}>
                           {it}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <Eyebrow color={C.slate}>Weekly session time</Eyebrow>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      {["10", "15", "20", "30"].map((m) => (
+                        <button key={m} onClick={() => setRegTimeLimit(m)}
+                          style={{ padding: "8px 14px", borderRadius: 20, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Fredoka", border: `2px solid ${regTimeLimit === m ? C.teal : C.line}`, background: regTimeLimit === m ? C.teal : C.paper, color: regTimeLimit === m ? C.paper : C.slate }}>
+                          {m} min
                         </button>
                       ))}
                     </div>
@@ -528,6 +558,15 @@ export default function App() {
       {grown ? <Card accent={C.navy}><Eyebrow color={C.navy}>For grown-ups</Eyebrow>
         {show ? <div style={{ marginTop: 14 }}><Bars tk={tk} scores={show} base={baseline} /></div> : null}
         {sessions.length ? <div style={{ marginTop: 16 }}><Eyebrow color={C.slate}>Past sessions</Eyebrow><div style={{ display: "grid", gap: 12, marginTop: 10 }}>{[...sessions].reverse().map((s) => (<div key={s.week} style={{ borderLeft: `3px solid ${C.line}`, paddingLeft: 14 }}><div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 14 }}>Week {s.week} <span style={{ color: C.slate, fontWeight: 400 }}>· work on: {s.weakness}</span></div>{(s.highlights || []).map((h, i) => <div key={i} style={{ fontSize: 14, fontStyle: "italic", color: C.slate, marginTop: 4 }}>"{h}"</div>)}</div>))}</div></div> : null}
+        <div style={{ marginTop: 18 }}>
+          <Eyebrow color={C.slate}>Weekly session time</Eyebrow>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            {[10, 15, 20, 30].map((m) => {
+              const active = (child.time_limit || 15) === m;
+              return (<button key={m} onClick={async () => { await supabase.from("children").update({ time_limit: m }).eq("id", child.id); setChild({ ...child, time_limit: m }); }} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "Fredoka", border: `2px solid ${active ? C.navy : C.line}`, background: active ? C.navy : C.paper, color: active ? C.paper : C.slate }}>{m} min</button>);
+            })}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}><Btn kind="ghost" onClick={exportChild}>Export data</Btn><Btn kind="ghost" onClick={deleteChild} style={{ color: C.coral, borderColor: "#F3C9BC" }}>Delete child</Btn></div>
       </Card> : null}
     </Shell>);
@@ -549,8 +588,9 @@ export default function App() {
     const cardTop = (
       <>
         <Scene interest={child.interest} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
           <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 20, background: meta.accent, color: "#fff", fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{meta.eb}</span>
+          {ch.step && STEP_DESC[ch.step] ? <span style={{ fontSize: 12, color: C.slate, fontFamily: "Fredoka", fontWeight: 600 }}>Step {ch.step} · {STEP_DESC[ch.step]}</span> : null}
         </div>
         {meta.hint ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 6px", lineHeight: 1.4 }}>{meta.hint}</p> : null}
         <H size={26}>{ch.title}</H>
@@ -563,9 +603,12 @@ export default function App() {
     );
 
     return (<Shell>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
-        {session.map((_, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 22, height: 3, background: i <= idx ? C.teal : C.line }} /> : null}<div style={{ width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: i < idx ? C.teal : i === idx ? C.sun : C.paper, border: `2px solid ${i <= idx ? "transparent" : C.line}`, color: i < idx ? C.paper : C.ink, fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{i < idx ? "✓" : i + 1}</div></React.Fragment>))}
-        <span style={{ marginLeft: "auto", fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 14 }}>Challenge {idx + 1} of {session.length}</span>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {session.map((_, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 22, height: 3, background: i <= idx ? C.teal : C.line }} /> : null}<div style={{ width: 26, height: 26, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: i < idx ? C.teal : i === idx ? C.sun : C.paper, border: `2px solid ${i <= idx ? "transparent" : C.line}`, color: i < idx ? C.paper : C.ink, fontFamily: "Fredoka", fontWeight: 700, fontSize: 13 }}>{i < idx ? "✓" : i + 1}</div></React.Fragment>))}
+          <span style={{ marginLeft: "auto", fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 14 }}>Challenge {idx + 1} of {session.length}</span>
+          {timeLeft !== null ? <span style={{ marginLeft: 14, fontFamily: "Fredoka", fontWeight: 700, fontSize: 14, color: timeLeft < 60 ? C.coral : timeLeft < 180 ? C.sun : C.teal }}>{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}</span> : null}
+        </div>
       </div>
       <div style={{ position: "relative" }}>
         {remaining > 0 ? <div style={ghost(10, .97, .7)} /> : null}
@@ -595,25 +638,43 @@ export default function App() {
               <div style={{ marginTop: 14, padding: "16px 14px 12px", borderRadius: 16, background: C.cream, border: `1px solid ${C.line}`, animation: "slidein .5s ease" }}>
                 <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: C.slate, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>{answerLabel}</div>
 
-                {/* MCQ — 2-column grid */}
-                {it === "choose" ? (
-                  <div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      {(ch.options || []).map((o, j) => {
-                        const lastOdd = j === (ch.options.length - 1) && ch.options.length % 2 !== 0;
-                        return (
-                          <div key={j} style={lastOdd ? { gridColumn: "1 / -1" } : undefined}>
-                            <MCQOption label={o} selected={r.choice === o} disabled={phase === "rethink"} onClick={() => setField(ch.id, "choice", o)} />
-                          </div>
-                        );
-                      })}
+                {/* MCQ — 2-column grid with instant right/wrong feedback */}
+                {it === "choose" ? (() => {
+                  const hasRightAnswer = ch.answer !== undefined;
+                  const selectedWrong = hasRightAnswer && !!r.choice && r.choice !== ch.options[ch.answer];
+                  const lockOptions = phase === "rethink" || (hasRightAnswer && !!r.choice);
+                  const optStatus = (j, o) => {
+                    if (!hasRightAnswer || !r.choice) return undefined;
+                    if (r.choice === o && j === ch.answer) return "correct";
+                    if (r.choice === o && j !== ch.answer) return "wrong";
+                    if (j === ch.answer && selectedWrong) return "showCorrect";
+                    return undefined;
+                  };
+                  return (
+                    <div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {(ch.options || []).map((o, j) => {
+                          const lastOdd = j === (ch.options.length - 1) && ch.options.length % 2 !== 0;
+                          return (
+                            <div key={j} style={lastOdd ? { gridColumn: "1 / -1" } : undefined}>
+                              <MCQOption label={o} selected={r.choice === o} status={optStatus(j, o)} disabled={lockOptions} onClick={() => setField(ch.id, "choice", o)} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {selectedWrong && ch.answerExplain ? (
+                        <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 12, background: "#E5F7EE", border: `1px solid #2BA36B`, animation: "slidein .3s ease" }}>
+                          <div style={{ fontFamily: "Fredoka", fontWeight: 700, color: "#1A6B40", fontSize: 13, marginBottom: 4 }}>The best answer</div>
+                          <p style={{ fontSize: 14, lineHeight: 1.55, color: "#1A6B40", margin: 0 }}>{ch.answerExplain}</p>
+                        </div>
+                      ) : null}
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+                        <Eyebrow color={C.slate}>{reasonLabel}</Eyebrow>
+                        <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why…" minHeight={70} />
+                      </div>
                     </div>
-                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
-                      <Eyebrow color={C.slate}>{reasonLabel}</Eyebrow>
-                      <SmallText value={r.reason || ""} onChange={(v) => setField(ch.id, "reason", v)} disabled={phase === "rethink"} placeholder="Tell the owl why…" minHeight={70} />
-                    </div>
-                  </div>
-                ) : null}
+                  );
+                })() : null}
 
                 {/* Text — numbered list */}
                 {it === "text" && ideaCount > 0 ? (
