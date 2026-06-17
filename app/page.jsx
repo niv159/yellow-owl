@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseBrowser";
 import { buildSessionFromBank } from "../lib/questionBank";
+import { getTodaysChallenge } from "../lib/dailyChallenges";
 
 // ── Brand ─────────────────────────────────────────────────────────────────────
 const C = { ink: "#1B2A45", navy: "#2A4368", teal: "#0FA890", cyan: "#22B8CF", sun: "#FFC23C", coral: "#F4845F", grape: "#7A6BE0", cream: "#FBF7EF", paper: "#FFFFFF", slate: "#67738A", line: "#EBE4D6" };
@@ -180,6 +181,7 @@ export default function App() {
   const [baseDef, setBaseDef] = useState(null); const [baseAns, setBaseAns] = useState({}); const [baseStage, setBaseStage] = useState("answer"); const [baseline, setBaseline] = useState(null);
   const [session, setSession] = useState([]); const [idx, setIdx] = useState(0); const [resp, setResp] = useState({}); const [revealStage, setRevealStage] = useState(0); const [timeLeft, setTimeLeft] = useState(null);
   const [phase, setPhase] = useState("answer"); const [busy, setBusy] = useState(false); const [report, setReport] = useState(null); const [grown, setGrown] = useState(false); const [msg, setMsg] = useState("");
+  const [dailyPhase, setDailyPhase] = useState("mcq"); const [dailyChoice, setDailyChoice] = useState(null); const [dailyOpenText, setDailyOpenText] = useState("");
 
   useEffect(() => { supabase.auth.getSession().then(({ data }) => setUser(data?.session?.user || null)); const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null)); return () => sub.subscription.unsubscribe(); }, []);
   useEffect(() => { if (user === undefined) return; if (!user) { setScreen("login"); return; } loadChildren(); }, [user]);
@@ -326,6 +328,15 @@ export default function App() {
   })();
   async function deleteChild() { if (!confirm(`Delete ${child.name} and all their data? This cannot be undone.`)) return; await supabase.from("children").delete().eq("id", child.id); setChild(null); loadChildren(); }
   function exportChild() { const blob = new Blob([JSON.stringify({ child, sessions }, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = `${child.name}-yellowowl.json`; a.click(); URL.revokeObjectURL(u); }
+  function startDailyChallenge() { setDailyPhase("mcq"); setDailyChoice(null); setDailyOpenText(""); setScreen("daily"); }
+  async function completeDailyChallenge() {
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const streak = child.last_daily_date === yesterday ? (child.daily_streak || 0) + 1 : 1;
+    await supabase.from("children").update({ daily_streak: streak, last_daily_date: today }).eq("id", child.id);
+    setChild({ ...child, daily_streak: streak, last_daily_date: today });
+    setDailyPhase("done");
+  }
 
   // ── BOOT / LOADING ──
   if (screen === "boot" || screen === "loading") return (<Shell max={520}><div style={{ textAlign: "center", paddingTop: 70 }}><div style={{ animation: "bob 1.6s ease infinite", display: "inline-block" }}><Owl size={92} mood={screen === "loading" ? "think" : "calm"} /></div><H size={24}>{screen === "boot" ? "Waking the owl…" : report === null && session.length ? "Hmm, let me see how you think…" : "Getting your adventure ready…"}</H></div></Shell>);
@@ -574,6 +585,36 @@ export default function App() {
         </> : <p style={{ color: C.slate }}>No stars yet — start your first adventure!</p>}
       </Card>
       {lastEntry ? (<><div style={{ height: 14 }} /><Card accent={C.coral}><Eyebrow color={C.coral}>Try next time</Eyebrow><p style={{ fontSize: 17, lineHeight: 1.6, marginTop: 8 }}>{lastEntry.child_tip}</p></Card></>) : null}
+      {/* ── Daily Spark ── */}
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const doneToday = child.last_daily_date === today;
+        const spark = getTodaysChallenge();
+        const streak = child.daily_streak || 0;
+        return (
+          <div style={{ margin: "16px 0" }}>
+            <div style={{ borderRadius: 24, padding: "20px 22px", background: "linear-gradient(135deg, #1A0E4F 0%, #2C1064 100%)", boxShadow: "0 8px 24px rgba(26,14,79,.22)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 18, color: "#FFD60A" }}>⚡ Daily Spark</div>
+                {streak > 0 ? <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 13, color: "#fff", background: "rgba(255,214,10,.15)", borderRadius: 12, padding: "4px 12px" }}>🔥 {streak} day{streak !== 1 ? "s" : ""}</div> : null}
+              </div>
+              {doneToday ? (
+                <p style={{ color: "rgba(255,255,255,.7)", fontSize: 15, margin: 0, lineHeight: 1.5 }}>
+                  Spark lit today! {streak > 1 ? `🔥 ${streak}-day streak — come back tomorrow.` : "Come back tomorrow to start a streak."}
+                </p>
+              ) : (
+                <>
+                  <p style={{ color: "rgba(255,255,255,.75)", fontSize: 14, lineHeight: 1.5, margin: "0 0 14px" }}>1 quick question · 2 minutes · today's reasoning challenge</p>
+                  <button onClick={startDailyChallenge}
+                    style={{ background: "#FFD60A", color: "#1A0E4F", border: "none", padding: "10px 22px", borderRadius: 16, fontFamily: "Fredoka", fontWeight: 700, fontSize: 16, cursor: "pointer", boxShadow: "0 4px 0 #C4A800" }}>
+                    Light it up →
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       <div style={{ textAlign: "center", margin: "22px 0" }}>
         {!baseline ? <Btn kind="ghost" onClick={async () => { const b = await loadBaseline(tk); setBaseDef(b); setBaseAns({}); setBaseStage("answer"); setScreen("baseline"); }} style={{ marginRight: 10 }}>Warm-up first</Btn> : null}
         <Btn onClick={() => startSession()}>Start week {sessions.length + 1} →</Btn>
@@ -756,6 +797,103 @@ export default function App() {
       {report.highlights && report.highlights.length ? <div style={{ marginTop: 14, display: "grid", gap: 10 }}>{report.highlights.map((h, i) => (<div key={i} style={{ padding: "12px 16px", borderLeft: `4px solid ${C.sun}`, background: C.cream, borderRadius: "0 12px 12px 0", fontSize: 14, fontStyle: "italic" }}>"{h}"</div>))}</div> : null}
     </Card> : null}
   </Shell>);
+
+  // ── DAILY SPARK ──
+  if (screen === "daily" && child) {
+    const spark = getTodaysChallenge();
+    const LETTERS = ["A", "B", "C", "D"];
+    const streak = child.daily_streak || 0;
+    const optBg = (i) => {
+      if (dailyChoice === null) return "rgba(255,255,255,.08)";
+      if (i === spark.mcq.answer) return "rgba(43,163,107,.22)";
+      if (i === dailyChoice && i !== spark.mcq.answer) return "rgba(244,132,95,.18)";
+      return "rgba(255,255,255,.04)";
+    };
+    const optBorder = (i) => {
+      if (dailyChoice === null) return "rgba(255,255,255,.14)";
+      if (i === spark.mcq.answer) return "#2BA36B";
+      if (i === dailyChoice && i !== spark.mcq.answer) return C.coral;
+      return "rgba(255,255,255,.06)";
+    };
+    const optTextColor = (i) => {
+      if (dailyChoice === null) return "rgba(255,255,255,.9)";
+      if (i === spark.mcq.answer) return "#6EE4A8";
+      if (i === dailyChoice && i !== spark.mcq.answer) return "#FFAA80";
+      return "rgba(255,255,255,.38)";
+    };
+    const letterColor = (i) => {
+      if (dailyChoice === null) return "#FFD60A";
+      if (i === spark.mcq.answer) return "#6EE4A8";
+      if (i === dailyChoice && i !== spark.mcq.answer) return "#FFAA80";
+      return "rgba(255,214,10,.25)";
+    };
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #0D1937 0%, #1A0E4F 60%, #2C1064 100%)", color: "#fff", padding: "26px 16px" }}>
+        <div style={{ maxWidth: 520, margin: "0 auto", animation: "pop .35s ease" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30 }}>
+            <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 22, color: "#FFD60A" }}>⚡ Daily Spark</div>
+            <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.08)", border: "none", color: "rgba(255,255,255,.6)", padding: "6px 16px", borderRadius: 12, cursor: "pointer", fontFamily: "Fredoka", fontSize: 14 }}>← Den</button>
+          </div>
+
+          {dailyPhase === "mcq" && (
+            <>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", color: "rgba(255,214,10,.65)", marginBottom: 14 }}>Today's question</div>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 600, fontSize: 21, lineHeight: 1.4, marginBottom: 26, color: "#fff" }}>{spark.mcq.question}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                {spark.mcq.options.map((opt, i) => (
+                  <button key={i} onClick={() => dailyChoice === null && setDailyChoice(i)}
+                    style={{ display: "flex", gap: 15, alignItems: "flex-start", textAlign: "left", padding: "14px 18px", borderRadius: 18, border: `2px solid ${optBorder(i)}`, background: optBg(i), color: optTextColor(i), cursor: dailyChoice !== null ? "default" : "pointer", fontFamily: "Andika, sans-serif", fontSize: 15, lineHeight: 1.5, transition: "all .18s ease", width: "100%" }}>
+                    <span style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 17, color: letterColor(i), minWidth: 20, flexShrink: 0, lineHeight: 1.3 }}>{LETTERS[i]}</span>
+                    <span style={{ flex: 1 }}>{opt}</span>
+                    {dailyChoice !== null && i === spark.mcq.answer && <span style={{ marginLeft: 8, flexShrink: 0, color: "#6EE4A8", fontSize: 18 }}>✓</span>}
+                    {dailyChoice !== null && i === dailyChoice && i !== spark.mcq.answer && <span style={{ marginLeft: 8, flexShrink: 0, color: "#FFAA80", fontSize: 18 }}>✗</span>}
+                  </button>
+                ))}
+              </div>
+              {dailyChoice !== null && (
+                <div style={{ marginTop: 22, animation: "slidein .3s ease" }}>
+                  <div style={{ padding: "16px 18px", borderRadius: 18, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.11)", marginBottom: 18 }}>
+                    <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 13, color: "#FFD60A", marginBottom: 6 }}>The thinking behind it</div>
+                    <p style={{ fontSize: 14, lineHeight: 1.65, color: "rgba(255,255,255,.8)", margin: 0 }}>{spark.mcq.explain}</p>
+                  </div>
+                  <button onClick={() => setDailyPhase("open")}
+                    style={{ width: "100%", padding: "14px", borderRadius: 18, background: "#FFD60A", color: "#1A0E4F", border: "none", fontFamily: "Fredoka", fontWeight: 700, fontSize: 18, cursor: "pointer", boxShadow: "0 5px 0 #C4A800" }}>
+                    Got it — dig deeper →
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {dailyPhase === "open" && (
+            <>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", color: "rgba(255,214,10,.65)", marginBottom: 14 }}>Now dig deeper</div>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 600, fontSize: 19, lineHeight: 1.45, marginBottom: 22, color: "#fff" }}>{spark.open}</div>
+              <textarea value={dailyOpenText} onChange={(e) => setDailyOpenText(e.target.value)}
+                placeholder="Write your thinking here…"
+                style={{ width: "100%", minHeight: 140, padding: "16px 18px", borderRadius: 18, border: "2px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.07)", color: "#fff", fontFamily: "Andika, sans-serif", fontSize: 16, lineHeight: 1.6, resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+              <button onClick={completeDailyChallenge} disabled={dailyOpenText.trim().length < 5}
+                style={{ marginTop: 16, width: "100%", padding: "14px", borderRadius: 18, background: dailyOpenText.trim().length >= 5 ? "#FFD60A" : "rgba(255,255,255,.1)", color: dailyOpenText.trim().length >= 5 ? "#1A0E4F" : "rgba(255,255,255,.3)", border: "none", fontFamily: "Fredoka", fontWeight: 700, fontSize: 18, cursor: dailyOpenText.trim().length >= 5 ? "pointer" : "not-allowed", boxShadow: dailyOpenText.trim().length >= 5 ? "0 5px 0 #C4A800" : "none", transition: "all .2s" }}>
+                Share my thinking →
+              </button>
+            </>
+          )}
+
+          {dailyPhase === "done" && (
+            <div style={{ textAlign: "center", paddingTop: 30 }}>
+              <div style={{ fontSize: 68, marginBottom: 14, animation: "bob 1.6s ease infinite", display: "inline-block" }}>⚡</div>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 34, color: "#FFD60A", marginBottom: 10 }}>Spark lit!</div>
+              <div style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 24, color: "#fff", marginBottom: 8 }}>🔥 {streak}-day streak!</div>
+              <p style={{ color: "rgba(255,255,255,.68)", fontSize: 16, lineHeight: 1.65, maxWidth: 340, margin: "0 auto" }}>
+                {streak < 2 ? "Great start! Come back tomorrow to build your streak." : streak < 5 ? "You're on a roll — keep it going tomorrow!" : streak < 10 ? `${streak} days of sharp thinking. Impressive!` : `${streak} days straight. You're a Spark legend!`}
+              </p>
+              <button onClick={() => setScreen("home")} style={{ marginTop: 32, padding: "14px 36px", borderRadius: 18, background: "#FFD60A", color: "#1A0E4F", border: "none", fontFamily: "Fredoka", fontWeight: 700, fontSize: 18, cursor: "pointer", boxShadow: "0 5px 0 #C4A800" }}>Back to my den →</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return <Shell><div style={{ textAlign: "center", paddingTop: 60 }}><Owl size={70} /><p style={{ color: C.slate }}>Loading…</p></div></Shell>;
 }

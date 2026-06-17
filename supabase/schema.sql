@@ -19,6 +19,8 @@ create table if not exists children (
 
 -- Add time_limit to existing tables without it (safe to run on existing DBs)
 alter table children add column if not exists time_limit integer default 15;
+alter table children add column if not exists daily_streak integer default 0;
+alter table children add column if not exists last_daily_date text;
 
 create table if not exists sessions (
   id             uuid primary key default gen_random_uuid(),
