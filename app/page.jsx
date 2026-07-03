@@ -37,6 +37,17 @@ const CAPABILITIES = {
   logic:     ["Haven't tried this yet", "Can state a conclusion", "Can give a reason for a conclusion", "Can build a chain of reasoning with no gaps", "Can identify what can and cannot be concluded from the evidence"],
 };
 
+// Short y-axis labels for the SkillChart — max ~22 chars so they fit at 10px in ML=164
+const CAP_SHORT = {
+  finding:   ["Name what to look up", "Spot what's relevant", "Pick the most useful", "Explain why it matters"],
+  creating:  ["1–2 ideas", "A few ideas", "Different directions", "Genuinely unexpected"],
+  analysing: ["One option's strengths", "Pros and cons", "Compare both fairly", "Spot the trade-off"],
+  evaluating:["Make a choice", "Give a reason", "Use clear criteria", "Defend it fully"],
+  causation: ["What came before", "A plausible cause", "Cause vs. symptom", "Why it happens"],
+  patterns:  ["Notice what repeats", "Describe the pattern", "Why it exists", "What breaks it"],
+  logic:     ["State a conclusion", "Give a reason", "Full reasoning chain", "What's provable"],
+};
+
 // Fallback content shown when the AI bank has not been seeded yet
 const EMERGENCY = {
   junior: [
@@ -169,6 +180,94 @@ function Sparkline({ points, color = C.teal, width = 88, height = 28 }) {
       <circle cx={toX(0)} cy={toY(points[0].score)} r={2.5} fill="none" stroke={color} strokeWidth={1.5} opacity={0.4} />
       <circle cx={toX(points.length - 1)} cy={toY(last.score)} r={4} fill={color} />
     </svg>
+  );
+}
+
+// Full-size skill line chart — replaces inline sparklines on home + summary screens
+function SkillChart({ skillKey, childLabel, color, points, grew }) {
+  const W = 380, H = 200, ML = 164, MR = 16, MT = 14, MB = 30;
+  const pw = W - ML - MR; // 200
+  const ph = H - MT - MB; // 156
+  const LEVELS = [4, 3, 2, 1];
+  const caps = CAP_SHORT[skillKey] || LEVELS.map((l) => `Level ${l}`);
+
+  // y=MT when score=4, y=MT+ph when score=1
+  const yOf = (score) => MT + ((4 - Math.min(4, Math.max(1, score))) / 3) * ph;
+  const xOf = (i) => {
+    if (points.length <= 1) return ML + 10;
+    return ML + (i / (points.length - 1)) * pw;
+  };
+
+  const lastPt = points.length ? points[points.length - 1] : null;
+  const currentLevel = lastPt ? Math.min(4, Math.max(1, Math.round(lastPt.score))) : null;
+
+  const coords = points.map((p, i) => ({ x: xOf(i), y: yOf(Math.max(1, p.score)) }));
+
+  const linePath = coords.length >= 2
+    ? coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ")
+    : null;
+  const areaPath = linePath
+    ? `${linePath} L${coords[coords.length - 1].x.toFixed(1)},${(MT + ph).toFixed(1)} L${coords[0].x.toFixed(1)},${(MT + ph).toFixed(1)} Z`
+    : null;
+
+  return (
+    <div style={{ background: C.paper, borderRadius: 20, border: `1px solid ${C.line}`, borderTop: `4px solid ${color}`, padding: "14px 14px 8px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+        <span style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 17, color: C.ink }}>{childLabel}</span>
+        {grew && <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 8px" }}>↑ grew</span>}
+      </div>
+      {!points.length ? (
+        <p style={{ fontSize: 13, color: C.slate, margin: "8px 0 6px", fontFamily: "Andika, sans-serif" }}>Start your first session to see your trail here.</p>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+          {LEVELS.map((level, li) => {
+            const y = yOf(level);
+            const isCurrent = level === currentLevel;
+            const prevY = li === 0 ? MT : yOf(LEVELS[li - 1]);
+            const nextY = li === LEVELS.length - 1 ? MT + ph : yOf(LEVELS[li + 1]);
+            const bandTop = li === 0 ? MT : prevY + (y - prevY) / 2;
+            const bandBot = li === LEVELS.length - 1 ? MT + ph : y + (nextY - y) / 2;
+            return (
+              <g key={level}>
+                {isCurrent && <rect x={ML} y={bandTop} width={pw} height={bandBot - bandTop} fill={color} opacity={0.1} rx={3} />}
+                <line x1={ML} y1={y} x2={ML + pw} y2={y}
+                  stroke={isCurrent ? color : "#E5E0D6"}
+                  strokeWidth={isCurrent ? 1.5 : 0.8}
+                  strokeDasharray={isCurrent ? "" : "4 3"}
+                  opacity={0.85}
+                />
+                <text x={ML - 8} y={y} textAnchor="end" dominantBaseline="middle"
+                  fontSize={isCurrent ? 11 : 10}
+                  fontFamily="Andika, system-ui"
+                  fill={isCurrent ? color : "#9EA6B4"}
+                  fontWeight={isCurrent ? "700" : "400"}>
+                  {caps[level - 1]}
+                </text>
+              </g>
+            );
+          })}
+          {areaPath && <path d={areaPath} fill={color} opacity={0.07} />}
+          {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />}
+          {coords.map((c, i) => {
+            const isLast = i === coords.length - 1;
+            return (
+              <g key={i}>
+                {isLast && <circle cx={c.x} cy={c.y} r={11} fill={color} opacity={0.12} />}
+                <circle cx={c.x} cy={c.y} r={isLast ? 5.5 : 3.5} fill={isLast ? color : C.paper} stroke={color} strokeWidth={2} />
+              </g>
+            );
+          })}
+          {coords.map((c, i) => (
+            <text key={i} x={c.x} y={H - 5} textAnchor="middle" fontSize={11}
+              fontFamily="Fredoka, system-ui"
+              fill={i === coords.length - 1 ? color : C.slate}
+              fontWeight={i === coords.length - 1 ? "700" : "400"}>
+              {points[i].week === 0 ? "Start" : `W${points[i].week}`}
+            </text>
+          ))}
+        </svg>
+      )}
+    </div>
   );
 }
 
@@ -613,31 +712,21 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}><Owl size={54} /><div><H size={26}>{child.name}'s den</H><div style={{ color: C.slate, fontSize: 14 }}>Week {sessions.length + 1} · {child.interest}</div></div></div>
         <button onClick={() => { setPasscode(""); setChild(null); supabase.auth.signOut(); }} style={{ background: "none", border: "none", color: C.teal, fontFamily: "Fredoka", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>Sign out</button>
       </div>
-      <Card accent={C.sun}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}><Eyebrow>How your thinking is growing</Eyebrow><TrackChip tk={tk} /></div>
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <Eyebrow>How your thinking is growing</Eyebrow>
+          <TrackChip tk={tk} />
+        </div>
         {show ? (
-          <div style={{ display: "grid", gap: 14 }}>
-            {T.keys.map((k) => {
-              const pts = [
-                baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
-                ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
-              ].filter(Boolean);
-              const level = pts.length ? Math.round(pts[pts.length - 1].score) : 0;
-              const cap = CAPABILITIES[k]?.[Math.min(4, Math.max(0, level))] || "";
-              const color = SKILL_COLOR[k] || C.teal;
-              return (
-                <div key={k} style={{ paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>{T.childLabel[k]}</span>
-                    <Sparkline points={pts} color={color} />
-                  </div>
-                  {cap ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 0", lineHeight: 1.45 }}>{cap}</p> : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : <p style={{ color: C.slate }}>Complete your first session to see your growth.</p>}
-      </Card>
+          T.keys.map((k) => {
+            const pts = [
+              baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
+              ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
+            ].filter(Boolean);
+            return <SkillChart key={k} skillKey={k} childLabel={T.childLabel[k]} color={SKILL_COLOR[k]} points={pts} />;
+          })
+        ) : <Card accent={C.sun}><p style={{ color: C.slate }}>Complete your first session to see how your thinking grows.</p></Card>}
+      </div>
       {lastEntry ? (<><div style={{ height: 14 }} /><Card accent={C.coral}><Eyebrow color={C.coral}>Try next time</Eyebrow><p style={{ fontSize: 17, lineHeight: 1.6, marginTop: 8 }}>{lastEntry.child_tip}</p></Card></>) : null}
       {/* ── Daily Spark ── */}
       {(() => {
@@ -839,34 +928,19 @@ export default function App() {
   // ── SUMMARY ──
   if (screen === "summary" && report) return (<Shell>
     <div style={{ textAlign: "center", marginBottom: 18 }}><div style={{ animation: "bob 1.6s ease infinite", display: "inline-block" }}><Owl size={88} mood="cheer" /></div><H size={32}>You did it, {child.name}!</H><p style={{ color: C.slate, fontSize: 16 }}>Week {report.week} done — saved to your den.</p></div>
-    <Card accent={C.sun}>
-      <Eyebrow>How your thinking grew</Eyebrow>
-      <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
-        {T.keys.map((k) => {
-          const pts = [
-            baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
-            ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
-          ].filter(Boolean);
-          const level = pts.length ? Math.round(pts[pts.length - 1].score) : 0;
-          const prevLevel = pts.length > 1 ? Math.round(pts[pts.length - 2].score) : null;
-          const grew = prevLevel !== null && level > prevLevel;
-          const cap = CAPABILITIES[k]?.[Math.min(4, Math.max(0, level))] || "";
-          const color = SKILL_COLOR[k] || C.teal;
-          return (
-            <div key={k} style={{ paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>{T.childLabel[k]}</span>
-                  {grew ? <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 8px" }}>↑ grew</span> : null}
-                </div>
-                <Sparkline points={pts} color={color} />
-              </div>
-              {cap ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 0", lineHeight: 1.45 }}>{cap}</p> : null}
-            </div>
-          );
-        })}
-      </div>
-    </Card>
+    <div>
+      <div style={{ marginBottom: 14 }}><Eyebrow>How your thinking grew</Eyebrow></div>
+      {T.keys.map((k) => {
+        const pts = [
+          baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
+          ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
+        ].filter(Boolean);
+        const level = pts.length ? Math.round(pts[pts.length - 1].score) : 0;
+        const prevLevel = pts.length > 1 ? Math.round(pts[pts.length - 2].score) : null;
+        const grew = prevLevel !== null && level > prevLevel;
+        return <SkillChart key={k} skillKey={k} childLabel={T.childLabel[k]} color={SKILL_COLOR[k]} points={pts} grew={grew} />;
+      })}
+    </div>
     <div style={{ height: 16 }} /><Card accent={C.teal}><Eyebrow>Try next time</Eyebrow><p style={{ fontSize: 18, lineHeight: 1.6, marginTop: 8 }}>{report.child_tip}</p></Card>
     <div style={{ textAlign: "center", margin: "22px 0 10px" }}><Btn onClick={() => setScreen("home")}>Back to your den →</Btn></div>
     <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => setGrown(!grown)} style={{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontFamily: "Fredoka", fontWeight: 600, fontSize: 14 }}>{grown ? "▾ Hide grown-up view" : "▸ Grown-up view"}</button></div>
