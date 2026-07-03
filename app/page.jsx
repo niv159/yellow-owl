@@ -183,15 +183,15 @@ function Sparkline({ points, color = C.teal, width = 88, height = 28 }) {
   );
 }
 
-// Full-size skill line chart — replaces inline sparklines on home + summary screens
+// Collapsible skill line chart — compact header, expands to full chart on tap
 function SkillChart({ skillKey, childLabel, color, points, grew }) {
+  const [open, setOpen] = useState(false);
   const W = 380, H = 200, ML = 164, MR = 16, MT = 14, MB = 30;
-  const pw = W - ML - MR; // 200
-  const ph = H - MT - MB; // 156
+  const pw = W - ML - MR;
+  const ph = H - MT - MB;
   const LEVELS = [4, 3, 2, 1];
   const caps = CAP_SHORT[skillKey] || LEVELS.map((l) => `Level ${l}`);
 
-  // y=MT when score=4, y=MT+ph when score=1
   const yOf = (score) => MT + ((4 - Math.min(4, Math.max(1, score))) / 3) * ph;
   const xOf = (i) => {
     if (points.length <= 1) return ML + 10;
@@ -200,9 +200,9 @@ function SkillChart({ skillKey, childLabel, color, points, grew }) {
 
   const lastPt = points.length ? points[points.length - 1] : null;
   const currentLevel = lastPt ? Math.min(4, Math.max(1, Math.round(lastPt.score))) : null;
+  const currentCap = currentLevel ? (CAPABILITIES[skillKey]?.[currentLevel] || "") : "";
 
   const coords = points.map((p, i) => ({ x: xOf(i), y: yOf(Math.max(1, p.score)) }));
-
   const linePath = coords.length >= 2
     ? coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ")
     : null;
@@ -211,61 +211,79 @@ function SkillChart({ skillKey, childLabel, color, points, grew }) {
     : null;
 
   return (
-    <div style={{ background: C.paper, borderRadius: 20, border: `1px solid ${C.line}`, borderTop: `4px solid ${color}`, padding: "14px 14px 8px", marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-        <span style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 17, color: C.ink }}>{childLabel}</span>
-        {grew && <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 8px" }}>↑ grew</span>}
+    <div
+      style={{ background: C.paper, borderRadius: 18, border: `1px solid ${C.line}`, borderTop: `4px solid ${color}`, padding: "11px 14px", marginBottom: 10, cursor: "pointer" }}
+      onClick={() => setOpen((v) => !v)}
+    >
+      {/* Header row — always visible */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 15, color: C.ink }}>{childLabel}</span>
+            {grew && <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 7px" }}>↑ grew</span>}
+          </div>
+          <div style={{ fontSize: 12, color: currentCap ? color : C.slate, marginTop: 2, fontFamily: "Andika, sans-serif", lineHeight: 1.35, paddingRight: 8 }}>
+            {currentCap || "Start a session to begin your trail"}
+          </div>
+        </div>
+        <div style={{ color: C.slate, fontSize: 13, flexShrink: 0, marginTop: 3 }}>{open ? "▴" : "▾"}</div>
       </div>
-      {!points.length ? (
-        <p style={{ fontSize: 13, color: C.slate, margin: "8px 0 6px", fontFamily: "Andika, sans-serif" }}>Start your first session to see your trail here.</p>
-      ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
-          {LEVELS.map((level, li) => {
-            const y = yOf(level);
-            const isCurrent = level === currentLevel;
-            const prevY = li === 0 ? MT : yOf(LEVELS[li - 1]);
-            const nextY = li === LEVELS.length - 1 ? MT + ph : yOf(LEVELS[li + 1]);
-            const bandTop = li === 0 ? MT : prevY + (y - prevY) / 2;
-            const bandBot = li === LEVELS.length - 1 ? MT + ph : y + (nextY - y) / 2;
-            return (
-              <g key={level}>
-                {isCurrent && <rect x={ML} y={bandTop} width={pw} height={bandBot - bandTop} fill={color} opacity={0.1} rx={3} />}
-                <line x1={ML} y1={y} x2={ML + pw} y2={y}
-                  stroke={isCurrent ? color : "#E5E0D6"}
-                  strokeWidth={isCurrent ? 1.5 : 0.8}
-                  strokeDasharray={isCurrent ? "" : "4 3"}
-                  opacity={0.85}
-                />
-                <text x={ML - 8} y={y} textAnchor="end" dominantBaseline="middle"
-                  fontSize={isCurrent ? 11 : 10}
-                  fontFamily="Andika, system-ui"
-                  fill={isCurrent ? color : "#9EA6B4"}
-                  fontWeight={isCurrent ? "700" : "400"}>
-                  {caps[level - 1]}
+
+      {/* Expanded chart */}
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {!points.length ? (
+            <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 6px", fontFamily: "Andika, sans-serif" }}>Start your first session to see your trail here.</p>
+          ) : (
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+              {LEVELS.map((level, li) => {
+                const y = yOf(level);
+                const isCurrent = level === currentLevel;
+                const prevY = li === 0 ? MT : yOf(LEVELS[li - 1]);
+                const nextY = li === LEVELS.length - 1 ? MT + ph : yOf(LEVELS[li + 1]);
+                const bandTop = li === 0 ? MT : prevY + (y - prevY) / 2;
+                const bandBot = li === LEVELS.length - 1 ? MT + ph : y + (nextY - y) / 2;
+                return (
+                  <g key={level}>
+                    {isCurrent && <rect x={ML} y={bandTop} width={pw} height={bandBot - bandTop} fill={color} opacity={0.1} rx={3} />}
+                    <line x1={ML} y1={y} x2={ML + pw} y2={y}
+                      stroke={isCurrent ? color : "#E5E0D6"}
+                      strokeWidth={isCurrent ? 1.5 : 0.8}
+                      strokeDasharray={isCurrent ? "" : "4 3"}
+                      opacity={0.85}
+                    />
+                    <text x={ML - 8} y={y} textAnchor="end" dominantBaseline="middle"
+                      fontSize={isCurrent ? 11 : 10}
+                      fontFamily="Andika, system-ui"
+                      fill={isCurrent ? color : "#9EA6B4"}
+                      fontWeight={isCurrent ? "700" : "400"}>
+                      {caps[level - 1]}
+                    </text>
+                  </g>
+                );
+              })}
+              {areaPath && <path d={areaPath} fill={color} opacity={0.07} />}
+              {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />}
+              {coords.map((c, i) => {
+                const isLast = i === coords.length - 1;
+                return (
+                  <g key={i}>
+                    {isLast && <circle cx={c.x} cy={c.y} r={11} fill={color} opacity={0.12} />}
+                    <circle cx={c.x} cy={c.y} r={isLast ? 5.5 : 3.5} fill={isLast ? color : C.paper} stroke={color} strokeWidth={2} />
+                  </g>
+                );
+              })}
+              {coords.map((c, i) => (
+                <text key={i} x={c.x} y={H - 5} textAnchor="middle" fontSize={11}
+                  fontFamily="Fredoka, system-ui"
+                  fill={i === coords.length - 1 ? color : C.slate}
+                  fontWeight={i === coords.length - 1 ? "700" : "400"}>
+                  {points[i].week === 0 ? "Start" : `W${points[i].week}`}
                 </text>
-              </g>
-            );
-          })}
-          {areaPath && <path d={areaPath} fill={color} opacity={0.07} />}
-          {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />}
-          {coords.map((c, i) => {
-            const isLast = i === coords.length - 1;
-            return (
-              <g key={i}>
-                {isLast && <circle cx={c.x} cy={c.y} r={11} fill={color} opacity={0.12} />}
-                <circle cx={c.x} cy={c.y} r={isLast ? 5.5 : 3.5} fill={isLast ? color : C.paper} stroke={color} strokeWidth={2} />
-              </g>
-            );
-          })}
-          {coords.map((c, i) => (
-            <text key={i} x={c.x} y={H - 5} textAnchor="middle" fontSize={11}
-              fontFamily="Fredoka, system-ui"
-              fill={i === coords.length - 1 ? color : C.slate}
-              fontWeight={i === coords.length - 1 ? "700" : "400"}>
-              {points[i].week === 0 ? "Start" : `W${points[i].week}`}
-            </text>
-          ))}
-        </svg>
+              ))}
+            </svg>
+          )}
+        </div>
       )}
     </div>
   );
