@@ -241,7 +241,7 @@ export default function App() {
   // Instant local scoring: option 0 = best thinking (4★), option 3 = weakest (0★)
   function scoreBaseline() {
     const keys = T.keys;
-    const scoreMap = [4, 3, 1, 0];
+    const scoreMap = [4, 3, 2, 1];
     const v = {};
     keys.forEach((k, i) => { v[k] = scoreMap[baseAns[i] ?? 3]; });
     setBaseline(v);
@@ -276,15 +276,7 @@ export default function App() {
   async function finish() {
     setBusy(true); setScreen("loading");
     const keys = T.keys;
-    let d = {};
-    try {
-      d = await authedPost("/api/score", { childId: child.id, age: child.age, track: tk, keys, transcript: transcript() });
-    } catch (e) {
-      console.error("Scoring failed:", e);
-    }
-    const scores = {}; keys.forEach((k) => (scores[k] = Number(d[k]) || 2));
-    let highlights = d.highlights; if (!highlights || !highlights.length) highlights = session.map((c) => (resp[c.id] || {}).answer || (resp[c.id] || {}).reason).filter(Boolean).slice(0, 2);
-    // Build structured challenge+response data for the portfolio/share page
+    // Build challenge data first — the scorer uses it for per-skill rubric assessment
     const challengesData = session.map((c) => {
       const r = resp[c.id] || {};
       return {
@@ -298,6 +290,14 @@ export default function App() {
         },
       };
     });
+    let d = {};
+    try {
+      d = await authedPost("/api/score", { childId: child.id, age: child.age, track: tk, keys, transcript: transcript(), challenges: challengesData });
+    } catch (e) {
+      console.error("Scoring failed:", e);
+    }
+    const scores = {}; keys.forEach((k) => (scores[k] = Number(d[k]) || 2));
+    let highlights = d.highlights; if (!highlights || !highlights.length) highlights = session.map((c) => (resp[c.id] || {}).answer || (resp[c.id] || {}).reason).filter(Boolean).slice(0, 2);
     const entry = { child_id: child.id, week: sessions.length + 1, scores, responsiveness: d.responsiveness ?? 2, child_tip: d.childTip || "Great work — keep explaining your thinking!", weakness: d.weakness || "", narrative: d.narrative || "", highlights, transcript: transcript(), challenges: challengesData };
     let savedId = null;
     try {

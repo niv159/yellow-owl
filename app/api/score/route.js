@@ -7,30 +7,73 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ── Local rule-based scoring ─────────────────────────────────────────────────
-// Used when no valid AI key is configured. Scores by measuring effort and
-// quality signals from the transcript text.
+// ── Per-skill rubrics ─────────────────────────────────────────────────────────
+// Embedded verbatim in the AI prompt. Each level describes observable behaviour,
+// not abstract quality labels like "good" or "excellent".
+
+const RUBRICS = {
+  finding:
+    "4=chose the most decision-relevant piece of information AND explained why it outweighs the alternatives; 3=correct choice with partial reasoning that doesn't contrast alternatives; 2=plausible but secondary choice (e.g. social or aesthetic factor over a functional one); 1=poor choice but some reasoning exists; 0=blank or off-topic",
+  creating:
+    "4=4+ distinct ideas spanning genuinely different approaches, not just variations on one theme; 3=3-4 ideas, mostly varied; 2=2-3 ideas that are all obvious or all similar; 1=one idea or placeholder text; 0=blank",
+  analysing:
+    "4=names a criterion explicitly, applies it to BOTH options, and acknowledges a trade-off; 3=both sides addressed but the criterion is implicit; 2=only one option discussed, or preference expressed without any comparison; 1=preference stated with no comparison at all; 0=blank",
+  evaluating:
+    "4=clear choice + criteria-based reasoning + acknowledges the strongest counter-argument + curveball rethink shows genuine reconsideration (not a restatement); 3=clear choice + solid reasoning but limited trade-off awareness; 2=choice made but reasoning is purely preference-based ('I just think…'); 1=choice stated without any reasoning; 0=blank",
+  causation:
+    "4=identifies the root or systemic cause AND explains the mechanism (why this cause produces this specific effect), distinguishes cause from symptoms; 3=correct cause identified but mechanism only partially explained; 2=surface-level or symptomatic cause chosen — a what, not a why; 1=spurious or coincidental factor cited as the cause; 0=blank",
+  patterns:
+    "4=names the pattern, explains the mechanism behind it, and identifies what would confirm or falsify it; 3=pattern named with partial explanation of why it exists; 2=describes what they observe without naming the underlying pattern; 1=vague observation with no pattern identified; 0=blank",
+  logic:
+    "4=valid reasoning chain with no logical gaps, correctly identifies what CAN and CANNOT be concluded from the given premises; 3=mostly valid reasoning with one minor gap; 2=reasoning present but contains a clear logical error (over-generalising, false equivalence, affirming the consequent, etc.); 1=assertion with no reasoning chain; 0=blank",
+};
+
+// Step number → skill key (matches TRACKS in page.jsx)
+const STEP_TO_KEY = {
+  4: "finding", 5: "creating", 6: "analysing", 7: "evaluating",
+  9: "causation", 10: "patterns", 12: "logic",
+};
+
+// Format one challenge + response block for the AI prompt
+function formatChallenge(c, i) {
+  const r = c.response || {};
+  const parts = [];
+  if (r.choice) parts.push(`Chose: ${r.choice}`);
+  if (r.reason?.trim()) parts.push(`Reason: ${r.reason.trim()}`);
+  if (r.answer?.trim()) parts.push(`Answer: ${r.answer.trim()}`);
+  if (r.ideas?.some(Boolean)) parts.push(`Ideas: ${r.ideas.filter(Boolean).join(" / ")}`);
+  if (r.curveball?.trim()) parts.push(`Curveball shown: ${r.curveball.trim()}`);
+  if (r.revised?.trim()) parts.push(`Rethink: ${r.revised.trim()}`);
+  const skillKey = STEP_TO_KEY[c.step] || "evaluating";
+  return `Challenge ${i + 1} [skill: ${skillKey} · step ${c.step} · type: ${c.type}]
+Scenario: ${c.scenario}
+Task: ${c.prompt}
+Response: ${parts.join(" | ") || "(no response given)"}`;
+}
+
+// ── Local fallback scoring ────────────────────────────────────────────────────
+// Used when the AI key is absent or the call fails.
 
 const CHILD_TIPS = {
   finding: [
-    "Good work thinking about what you need to know! Next time, ask yourself 'what would prove it one way or the other?' — that is the key question.",
+    "Good work thinking about what you need to know! Next time, ask yourself: 'what would prove it one way or the other?' — that is the key question.",
     "Nice job tracking down information! Try asking 'is this source trying to sell me something?' — that helps spot the tricky ones.",
   ],
   creating: [
-    "You came up with some great ideas! Next time, try pushing for one more — the unusual ones are often the best.",
-    "Good thinking! Try asking yourself 'what if everything was different?' to find ideas no one else would think of.",
+    "You came up with some good ideas! Next time, push for one more — the unusual ones are often the best.",
+    "Good thinking! Try asking yourself 'what if everything was completely different?' to find ideas no one else would think of.",
   ],
   analysing: [
     "Nice work looking closely! Next time, ask 'who loses?' as well as 'who wins?' for each option.",
     "Good analysis! Try thinking about what happens a week later, not just right now.",
   ],
   evaluating: [
-    "Great choice! Next time, say one reason your choice could go wrong — that makes your answer even stronger.",
+    "Great choice! Next time, name one reason your choice could go wrong — that makes your answer even stronger.",
     "Good deciding! Try weighing your options against each other before picking — like a mini competition.",
   ],
   causation: [
     "Good thinking about causes! Try asking 'and why did THAT happen?' to dig one level deeper.",
-    "Nice work finding causes! Next time, rank them — which cause is most likely and why?",
+    "Nice work finding causes! Next time, rank them — which cause is most likely, and why?",
   ],
   patterns: [
     "Good pattern spotting! Next time, ask what would break the pattern — that tells you how reliable it is.",
@@ -42,70 +85,37 @@ const CHILD_TIPS = {
   ],
 };
 
-const GENERIC_TIPS = [
-  "You explained your thinking really well this week. Keep doing that — it's the most important thinking skill.",
-  "Great session! Next time, try explaining your thinking to someone out loud before writing it — it really helps.",
-  "Well done! The best thinkers ask 'what if I'm wrong?' at the end. Try adding that to your answers.",
-];
-
-function scoreFromTranscript(transcript, keys) {
-  // Split transcript into per-challenge blocks
-  const blocks = transcript.split(/Challenge \d+/).slice(1);
-
-  // Extract all meaningful text responses
-  const allText = blocks.map((block) => {
-    const answerMatch = block.match(/Answer:\s*(.+?)(?:\||$)/s);
-    const reasonMatch = block.match(/Reason:\s*(.+?)(?:\||$)/s);
-    const planMatch   = block.match(/Plan:\s*(.+?)(?:\||$)/s);
-    const rethinkMatch = block.match(/Rethink:\s*(.+?)(?:\||$)/s);
-    const notesMatch = block.match(/Notes:\s*(.+?)(?:\||$)/s);
-    return [answerMatch, reasonMatch, planMatch, rethinkMatch, notesMatch]
-      .filter(Boolean)
-      .map((m) => m[1].trim())
-      .join(" ");
-  });
-
-  // Responsiveness: count rethinks with real content
-  const rethinkCount = blocks.filter((b) =>
-    /Rethink:\s*(?!—)(.{10,})/s.test(b)
-  ).length;
-  const responsiveness = Math.min(4, rethinkCount * 2 + (rethinkCount > 0 ? 1 : 0));
-
-  // Map block types to skill keys
-  const typeToKey = {
-    junior:  { generate: 0, analyse: 1, evaluate: 2, decision: 2 },
-    senior:  { cause: 0, pattern: 1, mystery: 2, information: 2, dilemma: 2 },
-  };
-
-  // Score each key by looking at blocks tagged to it
+function localScore(challenges, keys) {
   const scores = {};
-  keys.forEach((key, ki) => {
-    // Collect response lengths from all blocks
-    const lengths = allText.map((t) => t.replace(/—/g, "").trim().length);
-    const relevantLengths = lengths.length ? lengths : [0];
-
-    // Score based on average response effort
-    const avg = relevantLengths.reduce((a, b) => a + b, 0) / relevantLengths.length;
-
-    // Count ideas in list-style answers
-    const ideaCount = allText.reduce((n, t) => {
-      // Each numbered item like "1. ...\n2. ..." counts as one idea
-      return n + (t.match(/\d+\.\s+\S/g) || []).length;
-    }, 0);
-
-    // Base score from effort
-    let score = avg > 150 ? 3 : avg > 80 ? 2 : avg > 25 ? 1 : 0;
-
-    // Bonus for multiple ideas or rethinks
-    if (ideaCount >= 4) score = Math.min(4, score + 1);
-    if (rethinkCount > 0 && ki === keys.length - 1) score = Math.min(4, score + 1);
-
-    scores[key] = score;
+  keys.forEach((key) => {
+    const relevant = challenges.filter((c) => (STEP_TO_KEY[c.step] || "evaluating") === key);
+    if (!relevant.length) { scores[key] = 2; return; }
+    let best = 0;
+    for (const c of relevant) {
+      const r = c.response || {};
+      const textLen = [r.reason, r.answer, r.revised, ...(r.ideas || [])]
+        .filter(Boolean).join(" ").trim().length;
+      const hasCurveball = r.curveball && r.revised?.trim().length > 10;
+      const ideaCount = (r.ideas || []).filter(Boolean).length;
+      let s = textLen > 180 ? 3 : textLen > 80 ? 2 : textLen > 20 ? 1 : 0;
+      if (ideaCount >= 4) s = Math.min(4, s + 1);
+      if (hasCurveball) s = Math.min(4, s + 1);
+      best = Math.max(best, s);
+    }
+    scores[key] = best;
   });
 
-  // Pull best quotes (longest non-trivial responses)
+  const rethinkCount = challenges.filter(
+    (c) => c.response?.revised?.trim().length > 10
+  ).length;
+  const responsiveness = Math.min(4, rethinkCount * 2);
+
+  const allText = challenges.flatMap((c) => {
+    const r = c.response || {};
+    return [r.reason, r.answer, r.revised, ...(r.ideas || [])].filter(Boolean);
+  });
   const highlights = allText
-    .filter((t) => t.replace(/—/g, "").trim().length > 20)
+    .filter((t) => t.trim().length > 20)
     .sort((a, b) => b.length - a.length)
     .slice(0, 2)
     .map((t) => t.slice(0, 120).trim());
@@ -121,55 +131,62 @@ export async function POST(req) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { age, track, keys, transcript } = await req.json();
+  const { age, track, keys, challenges, transcript } = await req.json();
 
   const scoreFields = keys.map((k) => `"${k}": <0-4>`).join(", ");
+
+  // Only include rubrics for the skills present in this session
+  const rubricLines = keys
+    .map((k) => `${k}: ${RUBRICS[k] || "0=blank, 1=minimal, 2=partial, 3=good, 4=excellent"}`)
+    .join("\n");
+
+  // Structured challenges are preferred; fall back to raw transcript
+  const challengeSection = Array.isArray(challenges) && challenges.length
+    ? challenges.map(formatChallenge).join("\n\n")
+    : `Transcript:\n${transcript || "(empty)"}`;
+
+  const prompt = `Score this thinking session for a ${age}-year-old (${track} track).
+Assess each challenge response strictly against the rubric for its skill. A weak response should score 0-1 even if the child showed effort.
+
+RUBRICS:
+${rubricLines}
+
+CHALLENGES:
+${challengeSection}
+
+RESPONSIVENESS: How many curveball rethinks showed genuine reconsideration — not just restating the original?
+0=none engaged, 1=one partial attempt, 2=one genuine change of mind, 3=two genuine, 4=multiple thoughtful rethinks.
+
+Return ONLY valid JSON, no markdown:
+{${scoreFields}, "highlights": ["most insightful quote from any response (max 120 chars)", "second best quote or empty string"], "childTip": "1-2 sentence tip written directly to the child — encouraging and specific to what they did this week", "weakness": "one short skill phrase to work on next", "narrative": "2-3 sentences for parents summarising the quality of thinking shown this week", "responsiveness": <0-4>}`;
 
   try {
     const result = await callClaude({
       system:
-        "You score children's thinking sessions fairly and kindly. Return only valid JSON with no markdown.",
-      messages: [
-        {
-          role: "user",
-          content: `Score this thinking session for a ${age}-year-old (track: ${track}).
-
-SKILLS TO SCORE (${keys.join(", ")}):
-0 = no attempt  1 = partial  2 = basic  3 = good  4 = excellent
-
-TRANSCRIPT:
-${transcript}
-
-Return ONLY this JSON (no other text):
-{${scoreFields}, "highlights": ["best quote 1", "best quote 2"], "childTip": "encouraging 1-2 sentence next-step tip for the child", "weakness": "one skill phrase to work on next", "narrative": "2-3 sentence parent summary", "responsiveness": <0-4>}`,
-        },
-      ],
+        "You score children's thinking sessions fairly and precisely. Apply rubrics exactly as given — do not inflate scores for effort alone. Return only valid JSON with no markdown.",
+      messages: [{ role: "user", content: prompt }],
       maxTokens: 700,
     });
-
     return NextResponse.json(parseJSON(result));
   } catch (e) {
     console.error("Score API — AI unavailable, using local scoring:", e.message.slice(0, 120));
 
-    // Local scoring: meaningful effort-based scores, never all-2s
-    const { scores, responsiveness, highlights } = scoreFromTranscript(transcript || "", keys);
-
-    // Pick a tip for the lowest-scoring skill
+    const { scores, responsiveness, highlights } = localScore(challenges || [], keys);
     const weakKey = keys.reduce((a, b) => (scores[a] <= scores[b] ? a : b), keys[0]);
-    const tipPool = CHILD_TIPS[weakKey] || GENERIC_TIPS;
-    const childTip = tipPool[Math.floor(Math.random() * tipPool.length)];
-
-    const weakScore = scores[weakKey] || 0;
-    const weakness = weakScore < 2 ? weakKey.replace(/([A-Z])/g, " $1").toLowerCase() : "";
+    const tipPool = CHILD_TIPS[weakKey] || [];
+    const childTip =
+      tipPool[Math.floor(Math.random() * tipPool.length)] ||
+      "You explained your thinking really well this week. Keep doing that — it is the most important thinking skill.";
+    const weakness = (scores[weakKey] || 0) < 2 ? weakKey : "";
 
     return NextResponse.json({
       ...scores,
       highlights,
       childTip,
       weakness,
-      narrative: `Your child completed week's thinking session and showed ${
+      narrative: `Your child completed this week's thinking session and showed ${
         Object.values(scores).some((s) => s >= 3) ? "strong" : "solid"
-      } effort across the challenges. Connect an AI key (free at aistudio.google.com) for detailed personalised feedback.`,
+      } effort across the challenges. Connect an AI key for detailed personalised feedback.`,
       responsiveness,
     });
   }
