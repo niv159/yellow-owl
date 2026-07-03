@@ -22,6 +22,21 @@ const committing = (t, opts = []) => { const raw = INTERACTION[t]; const it = ra
 const TYPE_META = { research: { eb: "Find it out", accent: "#7A6BE0", hint: "Figure out what information you need most." }, generate: { eb: "Brain blast", accent: "#0FA890", hint: "Come up with as many different ideas as you can." }, analyse: { eb: "Look closely", accent: "#2A4368", hint: "Compare both sides before deciding which is better." }, evaluate: { eb: "Big decision", accent: "#F4845F", hint: "Pick the strongest option and say why you chose it." }, decision: { eb: "Your call", accent: "#F4845F", hint: "Think it through — only one option can win." }, cause: { eb: "Why though?", accent: "#22B8CF", hint: "Work out what is really causing this to happen." }, pattern: { eb: "Spot it", accent: "#0FA890", hint: "Find the hidden pattern in the data." }, mystery: { eb: "Crack the case", accent: "#7A6BE0", hint: "Use the clues to work out what really happened." }, information: { eb: "Who to trust?", accent: "#2A4368", hint: "Find the most reliable source of information." }, dilemma: { eb: "Real or not?", accent: "#F4845F", hint: "Think carefully before you commit to an answer." } };
 const STEP_DESC = { 4: "Finding information", 5: "Creating options", 6: "Analysing options", 7: "Evaluating options", 9: "Causation", 10: "Recognising patterns", 12: "Logical reasoning" };
 
+// Colour per skill key — used for sparkline lines
+const SKILL_COLOR = { finding: "#7A6BE0", creating: "#0FA890", analysing: "#2A4368", evaluating: "#F4845F", causation: "#22B8CF", patterns: "#2BA36B", logic: "#5B6CD9" };
+
+// What the child can DO at each level (0–4) for each skill.
+// These replace numeric scores — the child reads what changed, not what number they got.
+const CAPABILITIES = {
+  finding:   ["Haven't tried this yet", "Can name something worth looking into", "Can spot what's relevant from what isn't", "Can pick the most useful piece from several options", "Can explain why one piece of information matters more than others"],
+  creating:  ["Haven't tried this yet", "Can come up with one or two ideas", "Can come up with a few ideas", "Can come up with ideas that go in different directions", "Can come up with ideas that are genuinely unexpected"],
+  analysing: ["Haven't tried this yet", "Can say what's good about one option", "Can describe pros and cons of an option", "Can compare two options against the same measure", "Can identify the trade-off and explain which side matters more"],
+  evaluating:["Haven't tried this yet", "Can make a choice", "Can give a reason for a choice", "Can explain a choice using clear criteria", "Can defend a choice against the strongest argument against it"],
+  causation: ["Haven't tried this yet", "Can name something that happened before the effect", "Can identify a plausible cause", "Can tell a symptom apart from a root cause", "Can explain why the cause produces the effect"],
+  patterns:  ["Haven't tried this yet", "Can notice something that repeats", "Can describe a pattern", "Can explain why the pattern exists", "Can identify what would confirm or break the pattern"],
+  logic:     ["Haven't tried this yet", "Can state a conclusion", "Can give a reason for a conclusion", "Can build a chain of reasoning with no gaps", "Can identify what can and cannot be concluded from the evidence"],
+};
+
 // Fallback content shown when the AI bank has not been seeded yet
 const EMERGENCY = {
   junior: [
@@ -133,6 +148,27 @@ function IdeaList({ count, values, onChange, label = "Idea" }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// Inline sparkline — replaces stars on child-facing screens
+function Sparkline({ points, color = C.teal, width = 88, height = 28 }) {
+  const pad = 4;
+  if (!points || points.length === 0) return <div style={{ width, height }} />;
+  if (points.length === 1) {
+    const cy = pad + ((4 - Math.min(4, points[0].score)) / 4) * (height - pad * 2);
+    return <svg width={width} height={height}><circle cx={width / 2} cy={cy} r={4} fill={color} /></svg>;
+  }
+  const toX = (i) => pad + (i / (points.length - 1)) * (width - pad * 2);
+  const toY = (s) => pad + ((4 - Math.min(4, Math.max(0, s))) / 4) * (height - pad * 2);
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(p.score).toFixed(1)}`).join(" ");
+  const last = points[points.length - 1];
+  return (
+    <svg width={width} height={height}>
+      <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.55} />
+      <circle cx={toX(0)} cy={toY(points[0].score)} r={2.5} fill="none" stroke={color} strokeWidth={1.5} opacity={0.4} />
+      <circle cx={toX(points.length - 1)} cy={toY(last.score)} r={4} fill={color} />
+    </svg>
   );
 }
 
@@ -578,11 +614,29 @@ export default function App() {
         <button onClick={() => { setPasscode(""); setChild(null); supabase.auth.signOut(); }} style={{ background: "none", border: "none", color: C.teal, fontFamily: "Fredoka", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>Sign out</button>
       </div>
       <Card accent={C.sun}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}><Eyebrow>Your stars so far</Eyebrow><TrackChip tk={tk} /></div>
-        {show ? <>
-          <div style={{ display: "grid", gap: 12 }}>{T.keys.map((k) => (<div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 600 }}>{T.childLabel[k]}</span><Stars n={show[k]} /></div>))}</div>
-          {sessions.length ? (<div style={{ marginTop: 18 }}><Eyebrow color={C.slate}>Your trail</Eyebrow><div style={{ display: "flex", alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>{sessions.map((s, i) => (<React.Fragment key={i}>{i > 0 ? <div style={{ width: 24, height: 3, background: C.teal, opacity: .5 }} /> : null}<div style={{ width: 32, height: 32, borderRadius: 16, background: C.teal, color: C.paper, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Fredoka", fontWeight: 700, fontSize: 14 }}>{s.week}</div></React.Fragment>))}<div style={{ width: 24, height: 3, background: C.line }} /><div style={{ width: 32, height: 32, borderRadius: 16, background: C.sun, color: C.ink, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Fredoka", fontWeight: 700, animation: "bob 1.8s ease infinite" }}>★</div></div></div>) : null}
-        </> : <p style={{ color: C.slate }}>No stars yet — start your first adventure!</p>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}><Eyebrow>How your thinking is growing</Eyebrow><TrackChip tk={tk} /></div>
+        {show ? (
+          <div style={{ display: "grid", gap: 14 }}>
+            {T.keys.map((k) => {
+              const pts = [
+                baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
+                ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
+              ].filter(Boolean);
+              const level = pts.length ? Math.round(pts[pts.length - 1].score) : 0;
+              const cap = CAPABILITIES[k]?.[Math.min(4, Math.max(0, level))] || "";
+              const color = SKILL_COLOR[k] || C.teal;
+              return (
+                <div key={k} style={{ paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{T.childLabel[k]}</span>
+                    <Sparkline points={pts} color={color} />
+                  </div>
+                  {cap ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 0", lineHeight: 1.45 }}>{cap}</p> : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : <p style={{ color: C.slate }}>Complete your first session to see your growth.</p>}
       </Card>
       {lastEntry ? (<><div style={{ height: 14 }} /><Card accent={C.coral}><Eyebrow color={C.coral}>Try next time</Eyebrow><p style={{ fontSize: 17, lineHeight: 1.6, marginTop: 8 }}>{lastEntry.child_tip}</p></Card></>) : null}
       {/* ── Daily Spark ── */}
@@ -785,7 +839,34 @@ export default function App() {
   // ── SUMMARY ──
   if (screen === "summary" && report) return (<Shell>
     <div style={{ textAlign: "center", marginBottom: 18 }}><div style={{ animation: "bob 1.6s ease infinite", display: "inline-block" }}><Owl size={88} mood="cheer" /></div><H size={32}>You did it, {child.name}!</H><p style={{ color: C.slate, fontSize: 16 }}>Week {report.week} done — saved to your den.</p></div>
-    <Card accent={C.sun}><Eyebrow>What you showed this week</Eyebrow><div style={{ display: "grid", gap: 14, marginTop: 14 }}>{T.keys.map((k) => (<div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 600, fontSize: 16 }}>{T.childLabel[k]}</span><Stars n={report.scores[k]} /></div>))}</div></Card>
+    <Card accent={C.sun}>
+      <Eyebrow>How your thinking grew</Eyebrow>
+      <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
+        {T.keys.map((k) => {
+          const pts = [
+            baseline?.[k] != null ? { week: 0, score: baseline[k] } : null,
+            ...sessions.map((s) => s.scores?.[k] != null ? { week: s.week, score: s.scores[k] } : null),
+          ].filter(Boolean);
+          const level = pts.length ? Math.round(pts[pts.length - 1].score) : 0;
+          const prevLevel = pts.length > 1 ? Math.round(pts[pts.length - 2].score) : null;
+          const grew = prevLevel !== null && level > prevLevel;
+          const cap = CAPABILITIES[k]?.[Math.min(4, Math.max(0, level))] || "";
+          const color = SKILL_COLOR[k] || C.teal;
+          return (
+            <div key={k} style={{ paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{T.childLabel[k]}</span>
+                  {grew ? <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 8px" }}>↑ grew</span> : null}
+                </div>
+                <Sparkline points={pts} color={color} />
+              </div>
+              {cap ? <p style={{ fontSize: 13, color: C.slate, margin: "4px 0 0", lineHeight: 1.45 }}>{cap}</p> : null}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
     <div style={{ height: 16 }} /><Card accent={C.teal}><Eyebrow>Try next time</Eyebrow><p style={{ fontSize: 18, lineHeight: 1.6, marginTop: 8 }}>{report.child_tip}</p></Card>
     <div style={{ textAlign: "center", margin: "22px 0 10px" }}><Btn onClick={() => setScreen("home")}>Back to your den →</Btn></div>
     <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => setGrown(!grown)} style={{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontFamily: "Fredoka", fontWeight: 600, fontSize: 14 }}>{grown ? "▾ Hide grown-up view" : "▸ Grown-up view"}</button></div>
