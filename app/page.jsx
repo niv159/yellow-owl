@@ -37,6 +37,8 @@ const CAPABILITIES = {
   logic:     ["Haven't tried this yet", "Can state a conclusion", "Can give a reason for a conclusion", "Can build a chain of reasoning with no gaps", "Can identify what can and cannot be concluded from the evidence"],
 };
 
+const LEVEL_LABEL = ["Haven't started", "Beginning", "Growing", "Strong", "Fluent"];
+
 // Short y-axis labels for the SkillChart — max ~22 chars so they fit at 10px in ML=164
 const CAP_SHORT = {
   finding:   ["Name what to look up", "Spot what's relevant", "Pick the most useful", "Explain why it matters"],
@@ -218,8 +220,9 @@ function SkillChart({ skillKey, childLabel, color, points, grew }) {
       {/* Header row — always visible */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontFamily: "Fredoka", fontWeight: 700, fontSize: 15, color: C.ink }}>{childLabel}</span>
+            {currentLevel && <span style={{ fontSize: 12, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 20, padding: "2px 10px" }}>{LEVEL_LABEL[currentLevel]}</span>}
             {grew && <span style={{ fontSize: 11, fontFamily: "Fredoka", fontWeight: 700, color, background: `${color}18`, borderRadius: 8, padding: "2px 7px" }}>↑ grew</span>}
           </div>
           <div style={{ fontSize: 12, color: currentCap ? color : C.slate, marginTop: 2, fontFamily: "Andika, sans-serif", lineHeight: 1.35, paddingRight: 8 }}>
