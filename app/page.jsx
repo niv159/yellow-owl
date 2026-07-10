@@ -11,8 +11,8 @@ const ACCENT = { Space: "#5B6CD9", Sports: "#2BA36B", Animals: "#E08A3C", "Video
 const TERMS_VERSION = "v1";
 
 const TRACKS = {
-  junior: { label: "Explorer", keys: ["finding", "creating", "analysing", "evaluating"], keyLabel: { finding: "Finding information", creating: "Coming up with ideas", analysing: "Looking at options", evaluating: "Choosing wisely" }, childLabel: { finding: "Digging in", creating: "My ideas", analysing: "Looking closer", evaluating: "Best choice" }, keyStep: { finding: 4, creating: 5, analysing: 6, evaluating: 7 } },
-  senior: { label: "Navigator", keys: ["evaluating", "causation", "patterns", "logic"], keyLabel: { evaluating: "Evaluating options", causation: "Finding causes", patterns: "Spotting patterns", logic: "Logical thinking" }, childLabel: { evaluating: "Best choice", causation: "Finding the why", patterns: "Spotting patterns", logic: "Clear thinking" }, keyStep: { evaluating: 7, causation: 9, patterns: 10, logic: 12 } },
+  junior: { label: "Explorer", keys: ["finding", "creating", "analysing", "evaluating"], keyLabel: { finding: "Finding information", creating: "Coming up with ideas", analysing: "Looking at options", evaluating: "Choosing wisely" }, childLabel: { finding: "Finding Information", creating: "Creating Ideas", analysing: "Looking Deeper", evaluating: "Making Decisions" }, keyStep: { finding: 4, creating: 5, analysing: 6, evaluating: 7 } },
+  senior: { label: "Navigator", keys: ["evaluating", "causation", "patterns", "logic"], keyLabel: { evaluating: "Evaluating options", causation: "Finding causes", patterns: "Spotting patterns", logic: "Logical thinking" }, childLabel: { evaluating: "Making Decisions", causation: "Finding Reasons", patterns: "Identifying Patterns", logic: "Thinking Logically" }, keyStep: { evaluating: 7, causation: 9, patterns: 10, logic: 12 } },
 };
 const trackFor = (age) => (Number(age) <= 11 ? "junior" : "senior");
 const INTERACTION = { generate: "text", cause: "text", pattern: "text", analyse: "choose", evaluate: "choose", decision: "choose", mystery: "choose", information: "choose", dilemma: "verify", research: "choose" };
